@@ -8,6 +8,15 @@ const TASK_DESC = {
 
 function clampBand(x) { return Math.max(4, Math.min(8, Math.round(x * 2) / 2)); }
 
+const HITS = new Map();
+function rateLimited(ip) {
+  const now = Date.now(), win = 60 * 60 * 1000, max = 40;
+  const e = HITS.get(ip);
+  if (!e || now - e.start > win) { HITS.set(ip, { start: now, count: 1 }); return false; }
+  e.count++;
+  return e.count > max;
+}
+
 function mockScore(essay, words, lang) {
   const uz = lang === "uz";
   let base = 5.5;
@@ -66,6 +75,17 @@ async function callClaude(system, userMsg, maxTokens) {
 export async function POST(request) {
   try {
     const body = await request.json();
+
+    const required = process.env.APP_PASSWORD;
+    if (required && body.password !== required) {
+      return Response.json({ error: "Access code required or incorrect.", needPassword: true }, { status: 401 });
+    }
+
+    const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    if (rateLimited(ip)) {
+      return Response.json({ error: "Too many requests. Please wait a while and try again." }, { status: 429 });
+    }
+
     const { mode = "score", taskType = "t2", targetBand, question, qType, essay, words, lang, chartSummary } = body;
     const language = lang === "uz" ? "Uzbek" : "English";
     const tm = TASK_DESC[taskType] || TASK_DESC.t2;

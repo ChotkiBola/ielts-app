@@ -106,6 +106,10 @@ export default function Home() {
   const [modelText, setModelText] = useState("");
   const [improveLoading, setImproveLoading] = useState(false);
   const [improved, setImproved] = useState(null);
+  // access gate
+  const [accessCode, setAccessCode] = useState("");
+  const [showGate, setShowGate] = useState(false);
+  const [gateInput, setGateInput] = useState("");
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const task = TASKS[taskType];
@@ -116,6 +120,7 @@ export default function Home() {
 
   useEffect(() => {
     try { const raw = localStorage.getItem(HIST_KEY); if (raw) setHistory(JSON.parse(raw)); } catch (e) {}
+    try { const ac = localStorage.getItem("ielts:access"); if (ac) setAccessCode(ac); } catch (e) {}
   }, []);
   useEffect(() => {
     if (!running) return;
@@ -141,7 +146,7 @@ export default function Home() {
   async function api(payload) {
     const res = await fetch("/api/score", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskType, question: q.text, qType: q.type, lang, chartSummary: q.chart ? q.chart.summary : null, ...payload }),
+      body: JSON.stringify({ taskType, question: q.text, qType: q.type, lang, chartSummary: q.chart ? q.chart.summary : null, password: accessCode, ...payload }),
     });
     return res.json();
   }
@@ -151,6 +156,7 @@ export default function Home() {
     setLoading(true); setError(""); setResult(null); setActiveErr(-1); setImproved(null);
     try {
       const parsed = await api({ mode: "score", essay, words });
+      if (parsed.needPassword) { setShowGate(true); setLoading(false); return; }
       if (parsed.error) { setError(parsed.error); setLoading(false); return; }
       parsed.scoredEssay = essay;
       setResult(parsed);
@@ -162,17 +168,29 @@ export default function Home() {
 
   async function showModel() {
     setModelLoading(true); setModelText("");
-    try { const r = await api({ mode: "model" }); setModelText(r.essay || r.error || ""); }
-    catch (e) { setModelText(t("Network error.", "Tarmoq xatosi.")); }
+    try {
+      const r = await api({ mode: "model" });
+      if (r.needPassword) { setShowGate(true); setModelLoading(false); return; }
+      setModelText(r.essay || r.error || "");
+    } catch (e) { setModelText(t("Network error.", "Tarmoq xatosi.")); }
     finally { setModelLoading(false); }
   }
 
   async function improveEssay() {
     if (words < 40) { setError(t("Write something first.", "Avval biror narsa yozing.")); return; }
     setImproveLoading(true); setImproved(null);
-    try { const r = await api({ mode: "improve", essay, words, targetBand: 8 }); setImproved(r); }
-    catch (e) { setImproved({ improved: "", changes: [t("Network error.", "Tarmoq xatosi.")] }); }
+    try {
+      const r = await api({ mode: "improve", essay, words, targetBand: 8 });
+      if (r.needPassword) { setShowGate(true); setImproveLoading(false); return; }
+      setImproved(r);
+    } catch (e) { setImproved({ improved: "", changes: [t("Network error.", "Tarmoq xatosi.")] }); }
     finally { setImproveLoading(false); }
+  }
+
+  function saveGate() {
+    setAccessCode(gateInput);
+    try { localStorage.setItem("ielts:access", gateInput); } catch (e) {}
+    setShowGate(false); setError("");
   }
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
@@ -183,6 +201,20 @@ export default function Home() {
 
   return (
     <main style={{ minHeight: "100vh", padding: "0 0 48px" }}>
+      {showGate && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(20,30,55,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 26, width: 340, maxWidth: "100%" }}>
+            <h3 style={{ margin: "0 0 6px", fontFamily: "Fraunces, serif", fontSize: 20, color: C.ink }}>{t("Enter access code", "Kirish kodini kiriting")}</h3>
+            <p style={{ fontSize: 13, color: C.slate, margin: "0 0 14px", lineHeight: 1.5 }}>{t("This app is protected to prevent misuse.", "Bu app suiiste'molni oldini olish uchun himoyalangan.")}</p>
+            <input value={gateInput} onChange={(e) => setGateInput(e.target.value)} type="password" placeholder="••••••••"
+              onKeyDown={(e) => { if (e.key === "Enter") saveGate(); }}
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink }} />
+            <button onClick={saveGate} style={btn({ marginTop: 12, width: "100%", background: C.coral, color: "#fff", padding: "12px", borderRadius: 10, fontSize: 14 })}>
+              {t("Save & continue", "Saqlash va davom etish")}
+            </button>
+          </div>
+        </div>
+      )}
       <div style={{ maxWidth: 1080, margin: "0 auto", padding: "30px 20px 0" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
           <div>
