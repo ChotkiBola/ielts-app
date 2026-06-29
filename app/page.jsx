@@ -53,7 +53,7 @@ function MiniCrit({ label, band, C }) {
   );
 }
 
-function Trend({ data }) {
+function Trend({ data, C }) {
   if (data.length < 2) return null;
   const w = 240, h = 44, pad = 6;
   const xs = (i) => pad + (i * (w - 2 * pad)) / (data.length - 1);
@@ -439,7 +439,7 @@ export default function Home() {
         {tab === "history" && (
           <div className="anim">
             {history.length === 0 && <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 14, padding: 30, textAlign: "center", color: C.slate }}><p style={{ fontSize: 14, margin: 0 }}>{t("No essays scored yet.", "Hali baholangan essay yo'q.")}</p></div>}
-            {history.length >= 2 && (<div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, marginBottom: 16 }}><div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: C.slate, fontWeight: 600, marginBottom: 10 }}>{t("Band trend (oldest → newest)", "Band o'zgarishi (eski → yangi)")}</div><Trend data={[...history].reverse().map((h) => h.overall)} /></div>)}
+            {history.length >= 2 && (<div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, marginBottom: 16 }}><div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: C.slate, fontWeight: 600, marginBottom: 10 }}>{t("Band trend (oldest → newest)", "Band o'zgarishi (eski → yangi)")}</div><Trend data={[...history].reverse().map((h) => h.overall)} C={C} />.map((h) => h.overall)} /></div>)}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {history.map((h) => (
                 <div key={h.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden" }}>
