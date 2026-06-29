@@ -4,15 +4,24 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { TASKS, TASK_ORDER, VOCAB, ETYPE } from "./data";
 import TaskChart from "./TaskChart";
 
-const C = {
-  ink: "#16203A", paper: "#FCFBF7", card: "#FFFFFF",
-  coral: "#FF5A4D", coralDark: "#E2402F", slate: "#5B6478",
-  line: "#E7E3D8", green: "#2E9E6B", amber: "#E8A33D", red: "#D9534F",
+const THEMES = {
+  light: {
+    ink: "#16203A", paper: "#FCFBF7", card: "#FFFFFF",
+    coral: "#FF5A4D", coralDark: "#E2402F", slate: "#5B6478",
+    line: "#E7E3D8", green: "#2E9E6B", amber: "#E8A33D", red: "#D9534F",
+    navy: "#16203A",
+  },
+  dark: {
+    ink: "#ECEAE3", paper: "#11141A", card: "#1B2030",
+    coral: "#FF6F62", coralDark: "#E2402F", slate: "#9099B5",
+    line: "#2B3145", green: "#3FBE85", amber: "#E8A33D", red: "#E2675F",
+    navy: "#0E1326",
+  },
 };
-const HIST_KEY = "ielts:history", DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab";
+const HIST_KEY = "ielts:history", DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme";
 
 function countWords(s) { const t = s.trim(); return t ? t.split(/\s+/).length : 0; }
-function bandColor(b) { if (b >= 7) return C.green; if (b >= 6) return "#7BAE4A"; if (b >= 5) return C.amber; return C.red; }
+function bandColor(b, C) { if (b >= 7) return C.green; if (b >= 6) return "#7BAE4A"; if (b >= 5) return C.amber; return C.red; }
 function fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
 const etype = (t) => ETYPE[t] || ETYPE.grammar;
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 600, fontFamily: "inherit", ...extra });
@@ -35,10 +44,10 @@ function buildSegments(essay, errors) {
   return segs;
 }
 
-function MiniCrit({ label, band }) {
+function MiniCrit({ label, band, C }) {
   return (
     <div style={{ textAlign: "center", flex: 1 }}>
-      <div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: bandColor(band) }}>{Number(band).toFixed(1)}</div>
+      <div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: bandColor(band, C) }}>{Number(band).toFixed(1)}</div>
       <div style={{ fontSize: 10, color: C.slate, marginTop: 2 }}>{label}</div>
     </div>
   );
@@ -58,7 +67,7 @@ function Trend({ data }) {
   );
 }
 
-function ExplainCard({ data, lang }) {
+function ExplainCard({ data, lang, C }) {
   if (!data || data === "loading") return null;
   const L = (en, uz) => (lang === "uz" ? uz : en);
   return (
@@ -72,7 +81,7 @@ function ExplainCard({ data, lang }) {
   );
 }
 
-function Section({ title, count, open, onToggle, children, accent, delay }) {
+function Section({ title, count, open, onToggle, children, accent, delay, C }) {
   return (
     <div className="anim" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, marginBottom: 12, overflow: "hidden", animationDelay: `${delay || 0}ms` }}>
       <button onClick={onToggle} style={btn({ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", background: "transparent", color: C.ink, fontSize: 15 })}>
@@ -105,6 +114,7 @@ export default function Home() {
   const [modelText, setModelText] = useState("");
   const [improveLoading, setImproveLoading] = useState(false);
   const [improved, setImproved] = useState(null);
+  const [theme, setTheme] = useState("light");
   const [accessCode, setAccessCode] = useState("");
   const [showGate, setShowGate] = useState(false);
   const [gateInput, setGateInput] = useState("");
@@ -120,6 +130,7 @@ export default function Home() {
   const [vLoad, setVLoad] = useState(false);
   const restored = useRef(false);
 
+  const C = THEMES[theme];
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const task = TASKS[taskType];
   const bank = task.questions;
@@ -131,10 +142,12 @@ export default function Home() {
     try { const raw = localStorage.getItem(HIST_KEY); if (raw) setHistory(JSON.parse(raw)); } catch (e) {}
     try { const ac = localStorage.getItem("ielts:access"); if (ac) setAccessCode(ac); } catch (e) {}
     try { const mv = localStorage.getItem(VOCAB_KEY); if (mv) setMyVocab(JSON.parse(mv)); } catch (e) {}
+    try { const th = localStorage.getItem(THEME_KEY); if (th === "dark" || th === "light") setTheme(th); } catch (e) {}
     try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const o = JSON.parse(d); if (o.taskType && TASKS[o.taskType]) { setTaskType(o.taskType); setQIndex(o.qIndex || 0); setEssay(o.essay || ""); setSecondsLeft(TASKS[o.taskType].minutes * 60); } } } catch (e) {}
     restored.current = true;
   }, []);
   useEffect(() => { if (!restored.current) return; try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ taskType, qIndex, essay })); } catch (e) {} }, [taskType, qIndex, essay]);
+  useEffect(() => { try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} }, [theme]);
   useEffect(() => { if (!running) return; if (secondsLeft <= 0) { setRunning(false); return; } const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000); return () => clearInterval(id); }, [running, secondsLeft]);
 
   function persist(next) { setHistory(next); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} }
@@ -203,7 +216,7 @@ export default function Home() {
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
   return (
-    <main onMouseUp={handleSelect} style={{ minHeight: "100vh", padding: "0 0 56px" }}>
+    <main onMouseUp={handleSelect} style={{ minHeight: "100vh", padding: "0 0 56px", background: C.paper, color: C.ink, transition: "background .25s ease, color .25s ease" }}>
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -215,17 +228,17 @@ export default function Home() {
 
       {showGate && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(20,30,55,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }}>
-          <div className="anim" style={{ background: "#fff", borderRadius: 16, padding: 26, width: 340, maxWidth: "100%" }}>
+          <div className="anim" style={{ background: C.card, borderRadius: 16, padding: 26, width: 340, maxWidth: "100%" }}>
             <h3 style={{ margin: "0 0 6px", fontFamily: "Fraunces, serif", fontSize: 20, color: C.ink }}>{t("Enter access code", "Kirish kodini kiriting")}</h3>
             <p style={{ fontSize: 13, color: C.slate, margin: "0 0 14px", lineHeight: 1.5 }}>{t("This app is protected to prevent misuse.", "Bu app suiiste'molni oldini olish uchun himoyalangan.")}</p>
-            <input value={gateInput} onChange={(e) => setGateInput(e.target.value)} type="password" placeholder="••••••••" onKeyDown={(e) => { if (e.key === "Enter") saveGate(); }} style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink }} />
+            <input value={gateInput} onChange={(e) => setGateInput(e.target.value)} type="password" placeholder="••••••••" onKeyDown={(e) => { if (e.key === "Enter") saveGate(); }} style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink, background: C.card }} />
             <button onClick={saveGate} style={btn({ marginTop: 12, width: "100%", background: C.coral, color: "#fff", padding: "12px", borderRadius: 10, fontSize: 14 })}>{t("Save & continue", "Saqlash va davom etish")}</button>
           </div>
         </div>
       )}
 
       {selBtn && (
-        <button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.ink, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap", animation: "pop .15s ease both" })}>
+        <button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.navy, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap", animation: "pop .15s ease both" })}>
           ＋ {t("Add to my vocab", "Lug'atimga qo'shish")}
         </button>
       )}
@@ -236,13 +249,19 @@ export default function Home() {
             <span style={{ width: 14, height: 14, background: C.coral, borderRadius: 3, transform: "rotate(45deg)" }} />
             <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 22, color: C.ink }}>IELTS Writing Coach</span>
           </div>
-          <div style={{ display: "flex", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
-            {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (<button key={k} onClick={() => setLang(k)} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: lang === k ? C.ink : "transparent", color: lang === k ? "#fff" : C.slate })}>{l}</button>))}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
+              {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (<button key={k} onClick={() => setLang(k)} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: lang === k ? C.navy : "transparent", color: lang === k ? "#fff" : C.slate })}>{l}</button>))}
+            </div>
+            <div style={{ display: "flex", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
+              <button onClick={() => setTheme("light")} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: theme === "light" ? C.navy : "transparent", color: theme === "light" ? "#fff" : C.slate })}>☀ {t("Day mode", "Kunduzgi rejim")}</button>
+              <button onClick={() => setTheme("dark")} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: theme === "dark" ? C.navy : "transparent", color: theme === "dark" ? "#fff" : C.slate })}>☾ {t("Night mode", "Tungi rejim")}</button>
+            </div>
           </div>
         </header>
 
         <div style={{ display: "flex", gap: 4, background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: 4, marginBottom: 18 }}>
-          {TABS.map(([k, l]) => (<button key={k} onClick={() => setTab(k)} style={btn({ flex: 1, padding: "10px", borderRadius: 9, fontSize: 14, background: tab === k ? C.ink : "transparent", color: tab === k ? "#fff" : C.slate })}>{l}</button>))}
+          {TABS.map(([k, l]) => (<button key={k} onClick={() => setTab(k)} style={btn({ flex: 1, padding: "10px", borderRadius: 9, fontSize: 14, background: tab === k ? C.navy : "transparent", color: tab === k ? "#fff" : C.slate })}>{l}</button>))}
         </div>
 
         {/* WRITE — EDIT */}
@@ -252,7 +271,7 @@ export default function Home() {
               {TASK_ORDER.map((tt) => (<button key={tt} onClick={() => switchTask(tt)} style={btn({ padding: "8px 14px", borderRadius: 999, fontSize: 13, border: `1px solid ${taskType === tt ? C.coral : C.line}`, background: taskType === tt ? C.coral : C.card, color: taskType === tt ? "#fff" : C.ink })}>{TASKS[tt].label[lang]}</button>))}
             </div>
 
-            <div style={{ background: C.ink, color: "#fff", borderRadius: 14, padding: 18 }}>
+            <div style={{ background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: C.coral, fontWeight: 700, background: "rgba(255,90,77,.14)", padding: "4px 10px", borderRadius: 999 }}>{q.type}</span>
                 <button onClick={newQuestion} style={btn({ background: "rgba(255,255,255,.1)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>↻ {t("New question", "Yangi savol")}</button>
@@ -274,7 +293,7 @@ export default function Home() {
               <span style={{ marginLeft: "auto", fontSize: 13, color: words >= minW ? C.green : C.slate, fontWeight: 600 }}>{words} {t("words", "so'z")} {words >= minW ? "✓" : `· ${minW - words}`}</span>
             </div>
 
-            <textarea value={essay} onChange={(e) => setEssay(e.target.value)} placeholder={t("Start writing here…", "Shu yerga yozishni boshlang…")} style={{ width: "100%", minHeight: 300, padding: "8px 18px", border: `1px solid ${C.line}`, borderRadius: 12, fontSize: 16, lineHeight: "32px", color: C.ink, outline: "none", resize: "vertical", background: "repeating-linear-gradient(#FFF,#FFF 31px,#E7E3D8 31px,#E7E3D8 32px)" }} />
+            <textarea value={essay} onChange={(e) => setEssay(e.target.value)} placeholder={t("Start writing here…", "Shu yerga yozishni boshlang…")} style={{ width: "100%", minHeight: 300, padding: "8px 18px", border: `1px solid ${C.line}`, borderRadius: 12, fontSize: 16, lineHeight: "32px", color: C.ink, outline: "none", resize: "vertical", background: `repeating-linear-gradient(${C.card},${C.card} 31px,${C.line} 31px,${C.line} 32px)` }} />
 
             <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={evaluate} disabled={loading} style={btn({ background: loading ? C.coralDark : C.coral, color: "#fff", padding: "14px 26px", borderRadius: 12, fontSize: 15, opacity: loading ? .85 : 1 })}>{loading ? t("Scoring…", "Baholanmoqda…") : t("Score my essay →", "Baholash →")}</button>
@@ -284,7 +303,7 @@ export default function Home() {
             </div>
             {error && <p style={{ color: C.red, fontSize: 13, marginTop: 12 }}>{error}</p>}
             {modelText && (
-              <div className="sel anim" style={{ marginTop: 16, background: C.ink, color: "#fff", borderRadius: 14, padding: 18 }}>
+              <div className="sel anim" style={{ marginTop: 16, background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
                 <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 15, margin: "0 0 10px", color: C.coral }}>★ {t("Band-9 model answer", "Band-9 namuna javob")}</h3>
                 <p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap" }}>{modelText}</p>
                 <p style={{ fontSize: 11, color: "rgba(255,255,255,.5)", margin: "10px 0 0" }}>{t("Tip: select any phrase to add it to your vocab.", "Maslahat: istalgan iborani belgilab lug'atingizga qo'shing.")}</p>
@@ -298,19 +317,19 @@ export default function Home() {
           <>
             <div className="anim" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                <div style={{ width: 64, height: 64, borderRadius: 16, background: `${bandColor(result.overall)}1A`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 26, color: bandColor(result.overall), lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span>
+                <div style={{ width: 64, height: 64, borderRadius: 16, background: `${bandColor(result.overall, C)}1A`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 26, color: bandColor(result.overall, C), lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span>
                   <span style={{ fontSize: 8, color: C.slate, textTransform: "uppercase", letterSpacing: 1 }}>band</span>
                 </div>
                 <div style={{ display: "flex", flex: 1, minWidth: 200, gap: 6 }}>
-                  <MiniCrit label={taskType.startsWith("t1") ? "TA" : "TR"} band={result.tr.band} />
-                  <MiniCrit label="CC" band={result.cc.band} /><MiniCrit label="LR" band={result.lr.band} /><MiniCrit label="GRA" band={result.gra.band} />
+                  <MiniCrit label={taskType.startsWith("t1") ? "TA" : "TR"} band={result.tr.band} C={C} />
+                  <MiniCrit label="CC" band={result.cc.band} C={C} /><MiniCrit label="LR" band={result.lr.band} C={C} /><MiniCrit label="GRA" band={result.gra.band} C={C} />
                 </div>
-                <button onClick={() => setPhase("edit")} style={btn({ background: C.ink, color: "#fff", padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>← {t("Edit", "Tahrir")}</button>
+                <button onClick={() => setPhase("edit")} style={btn({ background: C.navy, color: "#fff", padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>← {t("Edit", "Tahrir")}</button>
               </div>
             </div>
 
-            <Section title={t("Corrections", "Tuzatishlar")} count={(result.errors || []).length} open={open.corrections} onToggle={() => toggle("corrections")} delay={40}>
+            <Section title={t("Corrections", "Tuzatishlar")} count={(result.errors || []).length} open={open.corrections} onToggle={() => toggle("corrections")} delay={40} C={C}>
               <div className="sel">
                 <p style={{ fontSize: 15.5, lineHeight: 1.9, margin: "0 0 14px", whiteSpace: "pre-wrap", color: C.ink }}>
                   {segments.map((s, i) => s.e === null ? <span key={i}>{s.text}</span> : <span key={i} onClick={() => setActiveErr(s.e)} style={{ cursor: "pointer", borderRadius: 2, padding: "0 1px", borderBottom: `2px solid ${etype(result.errors[s.e].type).c}`, background: activeErr === s.e ? `${etype(result.errors[s.e].type).c}22` : "transparent" }}>{s.text}</span>)}
@@ -326,7 +345,7 @@ export default function Home() {
               ))}
             </Section>
 
-            <Section title={t("Feedback", "Fikr-mulohaza")} open={open.feedback} onToggle={() => toggle("feedback")} delay={80}>
+            <Section title={t("Feedback", "Fikr-mulohaza")} open={open.feedback} onToggle={() => toggle("feedback")} delay={80} C={C}>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.green }}>✓ {t("What worked", "Yaxshi tomonlari")}</h4>
               <ul style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.strengths || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.coral }}>→ {t("To improve", "Yaxshilash kerak")}</h4>
@@ -340,7 +359,7 @@ export default function Home() {
             </Section>
 
             {result.synonyms && result.synonyms.length > 0 && (
-              <Section title={t("Word variety", "So'z xilma-xilligi")} count={result.synonyms.length} open={open.synonyms} onToggle={() => toggle("synonyms")} accent={C.coral} delay={120}>
+              <Section title={t("Word variety", "So'z xilma-xilligi")} count={result.synonyms.length} open={open.synonyms} onToggle={() => toggle("synonyms")} accent={C.coral} delay={120} C={C}>
                 <p style={{ fontSize: 12.5, color: C.slate, margin: "0 0 12px" }}>{t("Basic or repeated words — try these stronger alternatives:", "Oddiy yoki takror so'zlar — kuchliroq variantlar:")}</p>
                 {result.synonyms.map((s, i) => (
                   <div key={i} style={{ marginBottom: 12 }}>
@@ -351,13 +370,13 @@ export default function Home() {
               </Section>
             )}
 
-            <Section title={t("Improved version", "Yaxshilangan variant")} open={open.improved} onToggle={() => toggle("improved")} accent={C.green} delay={160}>
+            <Section title={t("Improved version", "Yaxshilangan variant")} open={open.improved} onToggle={() => toggle("improved")} accent={C.green} delay={160} C={C}>
               {!improved && <button onClick={improveEssay} disabled={improveLoading} style={btn({ background: C.green, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{improveLoading ? t("Rewriting…", "Qayta yozilmoqda…") : t("Rewrite at band 8 →", "Band 8 darajada qayta yozish →")}</button>}
               {improved && (<div className="sel"><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap", color: C.ink }}>{improved.improved}</p>{improved.changes && improved.changes.length > 0 && <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}>{improved.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>}</div>)}
             </Section>
 
-            <Section title={t("Model answer", "Namuna javob")} open={open.model} onToggle={() => toggle("model")} accent={C.coral} delay={200}>
-              {!modelText && <button onClick={showModel} disabled={modelLoading} style={btn({ background: C.ink, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{modelLoading ? t("Loading…", "Yuklanmoqda…") : t("Show band-9 answer →", "Band-9 namuna →")}</button>}
+            <Section title={t("Model answer", "Namuna javob")} open={open.model} onToggle={() => toggle("model")} accent={C.coral} delay={200} C={C}>
+              {!modelText && <button onClick={showModel} disabled={modelLoading} style={btn({ background: C.navy, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{modelLoading ? t("Loading…", "Yuklanmoqda…") : t("Show band-9 answer →", "Band-9 namuna →")}</button>}
               {modelText && <div className="sel"><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap", color: C.ink }}>{modelText}</p></div>}
             </Section>
 
@@ -371,16 +390,16 @@ export default function Home() {
             {/* search */}
             <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8 }}>
-                <input value={vq} onChange={(e) => setVq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchVocab(); }} placeholder={t("Search any English word…", "Istalgan inglizcha so'zni qidiring…")} style={{ flex: 1, padding: "11px 14px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink }} />
+                <input value={vq} onChange={(e) => setVq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchVocab(); }} placeholder={t("Search any English word…", "Istalgan inglizcha so'zni qidiring…")} style={{ flex: 1, padding: "11px 14px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink, background: C.card }} />
                 <button onClick={searchVocab} disabled={vLoad} style={btn({ background: C.coral, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{vLoad ? "…" : t("Search", "Qidir")}</button>
               </div>
               {vRes && (
                 <div className="anim" style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <span style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: C.ink }}>{vRes.word}</span>
-                    <button onMouseDown={(e) => { e.preventDefault(); addVocab(vRes.word); }} style={btn({ background: C.ink, color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>＋ {t("Save", "Saqlash")}</button>
+                    <button onMouseDown={(e) => { e.preventDefault(); addVocab(vRes.word); }} style={btn({ background: C.navy, color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>＋ {t("Save", "Saqlash")}</button>
                   </div>
-                  <ExplainCard data={vRes.data} lang={lang} />
+                  <ExplainCard data={vRes.data} lang={lang} C={C} />
                 </div>
               )}
             </div>
@@ -395,7 +414,7 @@ export default function Home() {
                       <button onClick={() => explainWord(v.word)} style={btn({ background: "transparent", color: C.coral, fontSize: 12 })}>{vMeaning[v.word] === "loading" ? "…" : t("Explain", "Izoh")}</button>
                       <button onClick={() => persistVocab(myVocab.filter((_, j) => j !== i))} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button>
                     </div>
-                    {vMeaning[v.word] && vMeaning[v.word] !== "loading" && <div style={{ marginTop: 4 }}><ExplainCard data={vMeaning[v.word]} lang={lang} /></div>}
+                    {vMeaning[v.word] && vMeaning[v.word] !== "loading" && <div style={{ marginTop: 4 }}><ExplainCard data={vMeaning[v.word]} lang={lang} C={C} /></div>}
                   </div>
                 ))}
               </div>
@@ -425,7 +444,7 @@ export default function Home() {
               {history.map((h) => (
                 <div key={h.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: "hidden" }}>
                   <div onClick={() => setExpanded(expanded === h.id ? -1 : h.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, cursor: "pointer" }}>
-                    <div style={{ width: 50, height: 50, borderRadius: 12, background: `${bandColor(h.overall)}1A`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 20, color: bandColor(h.overall) }}>{Number(h.overall).toFixed(1)}</span></div>
+                    <div style={{ width: 50, height: 50, borderRadius: 12, background: `${bandColor(h.overall, C)}1A`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 20, color: bandColor(h.overall, C) }}>{Number(h.overall).toFixed(1)}</span></div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{h.taskLabel || "Task 2"} · {h.qType} · {h.words} {t("words", "so'z")}</div><div style={{ fontSize: 12, color: C.slate }}>{new Date(h.date).toLocaleString()}</div></div>
                     <button onClick={(ev) => { ev.stopPropagation(); persist(history.filter((x) => x.id !== h.id)); }} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button>
                   </div>
