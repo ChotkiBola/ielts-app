@@ -200,9 +200,10 @@ export default function Home() {
   function saveGate() { setAccessCode(gateInput); try { localStorage.setItem("ielts:access", gateInput); } catch (e) {} setShowGate(false); setError(""); }
 
   function addVocab(word) {
-    const w = word.trim(); if (!w || w.length > 60) return;
-    if (myVocab.some((x) => x.word.toLowerCase() === w.toLowerCase())) { setSelBtn(null); return; }
-    persistVocab([{ word: w, date: Date.now() }, ...myVocab].slice(0, 200));
+    const w = (word || "").trim(); if (!w || w.length > 60) return;
+    if (!myVocab.some((x) => x.word.toLowerCase() === w.toLowerCase())) {
+      persistVocab([{ word: w, date: Date.now() }, ...myVocab].slice(0, 200));
+    }
     setSelBtn(null);
     try { window.getSelection().removeAllRanges(); } catch (e) {}
   }
@@ -246,7 +247,7 @@ export default function Home() {
       )}
 
       {selBtn && (
-        <button onClick={() => addVocab(selBtn.text)} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.ink, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap" })}>
+        <button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.ink, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap" })}>
           ＋ {t("Add to my vocab", "Lug'atimga qo'shish")}
         </button>
       )}
