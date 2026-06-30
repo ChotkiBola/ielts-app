@@ -19,6 +19,7 @@ const etype = (t) => ETYPE[t] || ETYPE.grammar;
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 600, fontFamily: "inherit", ...extra });
 const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra });
 const rowToVocabItem = (r) => ({ id: r.id, word: r.word, date: r.created_at });
+function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 function buildSegments(essay, errors) {
   const used = [];
@@ -114,6 +115,15 @@ export default function Home() {
   const [vq, setVq] = useState("");
   const [vRes, setVRes] = useState(null);
   const [vLoad, setVLoad] = useState(false);
+  // flashcard practice
+  const [pMode, setPMode] = useState(null); // null | "config" | "run" | "done"
+  const [pSource, setPSource] = useState("both");
+  const [pDeck, setPDeck] = useState([]);
+  const [pIdx, setPIdx] = useState(0);
+  const [pReveal, setPReveal] = useState(false);
+  const [pKnown, setPKnown] = useState(0);
+  const [pTotal, setPTotal] = useState(0);
+  const [pMean, setPMean] = useState({});
   const restored = useRef(false);
 
   const C = THEMES[theme];
@@ -230,6 +240,38 @@ export default function Home() {
   function handleSelect(e) { try { const sel = window.getSelection(); const text = sel ? sel.toString().trim() : ""; const inSel = e.target.closest && e.target.closest(".sel"); if (text && text.length > 1 && text.length < 60 && inSel) { const rect = sel.getRangeAt(0).getBoundingClientRect(); setSelBtn({ text, x: rect.left + rect.width / 2, y: rect.top }); } else setSelBtn(null); } catch (err) { setSelBtn(null); } }
   async function explainWord(w) { if (vMeaning[w] && vMeaning[w] !== "loading") { setVMeaning((m) => ({ ...m, [w]: null })); return; } setVMeaning((m) => ({ ...m, [w]: "loading" })); try { const r = await api({ mode: "explain", word: w }); setVMeaning((m) => ({ ...m, [w]: r })); } catch (e) { setVMeaning((m) => ({ ...m, [w]: { meaning: t("Failed.", "Xatolik."), examples: [] } })); } }
   async function searchVocab() { const w = vq.trim(); if (!w) return; setVLoad(true); setVRes(null); try { const r = await api({ mode: "explain", word: w }); if (r.needPassword) { setShowGate(true); setVLoad(false); return; } setVRes({ word: w, data: r }); } catch (e) { setVRes({ word: w, data: { meaning: t("Failed.", "Xatolik."), examples: [] } }); } finally { setVLoad(false); } }
+
+  // ---- flashcard practice ----
+  function startPractice(source) {
+    let pool = [];
+    if (source !== "topics") pool = pool.concat(myVocab.map((v) => ({ word: v.word, meaning: null })));
+    if (source !== "mine") Object.values(VOCAB).forEach((arr) => arr.forEach((v) => pool.push({ word: v.word, meaning: v.meaning })));
+    const seen = new Set();
+    pool = pool.filter((c) => { const k = c.word.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    pool = shuffle(pool).slice(0, 20).map((c) => ({ ...c, dir: Math.random() < 0.5 ? "w2m" : "m2w" }));
+    if (pool.length === 0) return;
+    setPDeck(pool); setPTotal(pool.length); setPIdx(0); setPReveal(false); setPKnown(0); setPMode("run");
+  }
+  async function fetchMeaning(word) {
+    if (pMean[word]) return;
+    setPMean((m) => ({ ...m, [word]: "loading" }));
+    try { const r = await api({ mode: "explain", word }); setPMean((m) => ({ ...m, [word]: (r && r.meaning) || "—" })); }
+    catch (e) { setPMean((m) => ({ ...m, [word]: "—" })); }
+  }
+  function gradeCard(known) {
+    let deck = pDeck;
+    if (known) setPKnown((k) => k + 1);
+    else deck = [...pDeck, pDeck[pIdx]];
+    if (!known) setPDeck(deck);
+    if (pIdx + 1 >= deck.length) setPMode("done");
+    else { setPIdx((i) => i + 1); setPReveal(false); }
+  }
+
+  useEffect(() => {
+    if (pMode !== "run") return;
+    const c = pDeck[pIdx];
+    if (c && !c.meaning && !pMean[c.word]) fetchMeaning(c.word);
+  }, [pMode, pIdx]);
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
   const TABS = [["write", t("Write", "Yozish")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
@@ -394,8 +436,77 @@ export default function Home() {
           </>
         )}
 
-        {tab === "vocab" && (
+        {tab === "vocab" && pMode === "config" && (
+          <div className="anim" style={{ maxWidth: 460, margin: "20px auto" }}>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 20, color: C.ink, textAlign: "center", margin: "0 0 4px" }}>🎴 {t("Flashcards", "Kartochka mashqi")}</h3>
+            <p style={{ textAlign: "center", color: C.slate, fontSize: 13, margin: "0 0 18px" }}>{t("Choose which words to practise", "Qaysi so'zlarni mashq qilamiz")}</p>
+            {[["mine", t("My vocab only", "Faqat mening lug'atim"), myVocab.length], ["topics", t("Topic words", "Mavzuli so'zlar"), Object.values(VOCAB).reduce((n, a) => n + a.length, 0)], ["both", t("Both mixed", "Ikkalasi aralash"), null]].map(([k, l, n]) => (
+              <button key={k} onClick={() => setPSource(k)} style={btn({ width: "100%", textAlign: "left", padding: "14px 16px", borderRadius: 12, marginBottom: 10, border: `1px solid ${pSource === k ? C.coral : C.line}`, background: pSource === k ? `${C.coral}10` : C.card, color: C.ink, fontSize: 14, display: "flex", justifyContent: "space-between" })}><span>{l}</span>{n != null && <span style={{ color: C.slate, fontSize: 13 }}>{n}</span>}</button>
+            ))}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button onClick={() => setPMode(null)} style={btn({ flex: 1, padding: "12px", borderRadius: 10, background: C.card, border: `1px solid ${C.line}`, color: C.slate, fontSize: 14 })}>{t("Cancel", "Bekor")}</button>
+              <button onClick={() => startPractice(pSource)} style={btn({ flex: 2, padding: "12px", borderRadius: 10, background: C.coral, color: "#fff", fontSize: 14 })}>{t("Start →", "Boshlash →")}</button>
+            </div>
+            {pSource !== "topics" && myVocab.length === 0 && <p style={{ textAlign: "center", color: C.amber, fontSize: 12, marginTop: 12 }}>{t("Your vocab is empty — add words or pick Topic words.", "Lug'atingiz bo'sh — so'z qo'shing yoki mavzuli so'zlarni tanlang.")}</p>}
+          </div>
+        )}
+
+        {tab === "vocab" && pMode === "run" && pDeck[pIdx] && (() => {
+          const card = pDeck[pIdx];
+          const isW2M = card.dir === "w2m";
+          const meaning = card.meaning || pMean[card.word];
+          const mLoading = meaning === "loading" || meaning === undefined;
+          const front = isW2M ? card.word : (mLoading ? "…" : meaning);
+          const back = isW2M ? (mLoading ? "…" : meaning) : card.word;
+          const frontLabel = isW2M ? t("Word", "So'z") : t("Meaning", "Ma'no");
+          const backLabel = isW2M ? t("Meaning", "Ma'no") : t("Word", "So'z");
+          return (
+            <div className="anim" style={{ maxWidth: 460, margin: "12px auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <button onClick={() => setPMode(null)} style={btn({ background: "transparent", color: C.slate, fontSize: 13 })}>✕ {t("Quit", "Chiqish")}</button>
+                <span style={{ fontSize: 13, color: C.slate, fontWeight: 600 }}>{pIdx + 1} / {pDeck.length}</span>
+                <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>✓ {pKnown}</span>
+              </div>
+              <div style={{ height: 4, background: C.line, borderRadius: 999, marginBottom: 18, overflow: "hidden" }}><div style={{ height: "100%", width: `${(pIdx / pDeck.length) * 100}%`, background: C.coral, transition: "width .3s" }} /></div>
+
+              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 18, padding: "36px 24px", minHeight: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+                <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: C.coral, fontWeight: 700, marginBottom: 12 }}>{frontLabel}</span>
+                <span style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: front.length > 22 ? 18 : 24, color: C.ink, lineHeight: 1.35 }}>{front}</span>
+                {pReveal && (
+                  <div className="anim" style={{ marginTop: 20, paddingTop: 18, borderTop: `1px solid ${C.line}`, width: "100%" }}>
+                    <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: C.green, fontWeight: 700 }}>{backLabel}</span>
+                    <div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: back.length > 22 ? 17 : 22, color: C.ink, marginTop: 8, lineHeight: 1.35 }}>{back}</div>
+                  </div>
+                )}
+              </div>
+
+              {!pReveal ? (
+                <button onClick={() => { if (!isW2M && mLoading) return; setPReveal(true); if (card.meaning == null) fetchMeaning(card.word); }} style={btn({ width: "100%", marginTop: 16, padding: "14px", borderRadius: 12, background: C.navy, color: "#fff", fontSize: 15 })}>{t("Show answer", "Javobni ko'rsat")}</button>
+              ) : (
+                <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                  <button onClick={() => gradeCard(false)} style={btn({ flex: 1, padding: "14px", borderRadius: 12, background: C.card, border: `1px solid ${C.line}`, color: C.slate, fontSize: 14 })}>↻ {t("Again", "Yana")}</button>
+                  <button onClick={() => gradeCard(true)} style={btn({ flex: 1, padding: "14px", borderRadius: 12, background: C.green, color: "#fff", fontSize: 14 })}>✓ {t("Got it", "Bildim")}</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {tab === "vocab" && pMode === "done" && (
+          <div className="anim" style={{ maxWidth: 460, margin: "30px auto", textAlign: "center" }}>
+            <div style={{ fontSize: 44, marginBottom: 8 }}>{pKnown === pTotal ? "🏆" : pKnown >= pTotal * 0.7 ? "🎉" : "💪"}</div>
+            <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 22, color: C.ink, margin: "0 0 6px" }}>{t("Practice complete!", "Mashq tugadi!")}</h3>
+            <p style={{ fontSize: 16, color: C.slate, margin: "0 0 22px" }}>{t(`You knew ${pKnown} of ${pTotal} words`, `${pTotal} ta so'zdan ${pKnown} tasini bildingiz`)}</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => setPMode(null)} style={btn({ padding: "12px 22px", borderRadius: 10, background: C.card, border: `1px solid ${C.line}`, color: C.slate, fontSize: 14 })}>{t("Done", "Tayyor")}</button>
+              <button onClick={() => startPractice(pSource)} style={btn({ padding: "12px 22px", borderRadius: 10, background: C.coral, color: "#fff", fontSize: 14 })}>↻ {t("Practice again", "Yana mashq")}</button>
+            </div>
+          </div>
+        )}
+
+        {tab === "vocab" && !pMode && (
           <div className="anim">
+            <button onClick={() => setPMode("config")} style={btn({ width: "100%", marginBottom: 16, padding: "14px", borderRadius: 14, background: C.navy, color: "#fff", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 })}>🎴 {t("Practice flashcards", "Kartochka mashqi")}</button>
             <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={vq} onChange={(e) => setVq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchVocab(); }} placeholder={t("Search any English word…", "Istalgan inglizcha so'zni qidiring…")} style={{ flex: 1, padding: "11px 14px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink, background: C.card }} />
