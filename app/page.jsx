@@ -249,6 +249,13 @@ export default function Home() {
         @keyframes draw{from{stroke-dashoffset:600}to{stroke-dashoffset:0}}
         .anim{animation:fadeUp .45s ease both}
         textarea:focus,input:focus{box-shadow:0 0 0 3px rgba(255,90,77,.16)}
+        @media (max-width:480px){
+          .wrap{padding:20px 12px 0 !important}
+          .qcard{padding:14px !important}
+          .brand{font-size:18px !important}
+          .review-band{flex-direction:column;align-items:stretch !important}
+          .review-band .edit-btn{width:100%}
+        }
       `}</style>
 
       {showGate && (
@@ -264,11 +271,11 @@ export default function Home() {
 
       {selBtn && (<button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.navy, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap", animation: "pop .15s ease both" })}>＋ {t("Add to my vocab", "Lug'atimga qo'shish")}</button>)}
 
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 18px 0" }}>
+      <div className="wrap" style={{ maxWidth: 760, margin: "0 auto", padding: "28px 18px 0" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ width: 14, height: 14, background: C.coral, borderRadius: 3, transform: "rotate(45deg)" }} />
-            <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 22, color: C.ink }}>IELTS Writing Coach</span>
+            <span className="brand" style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 22, color: C.ink }}>IELTS Writing Coach</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
@@ -297,12 +304,12 @@ export default function Home() {
                 </select>
               </div>
             </div>
-            <div style={{ background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
+            <div className="qcard" style={{ background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: C.coral, fontWeight: 700, background: "rgba(255,90,77,.14)", padding: "4px 10px", borderRadius: 999 }}>{q.type}</span>
                 <button onClick={newQuestion} style={btn({ background: "rgba(255,255,255,.1)", color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>↻ {t("New question", "Yangi savol")}</button>
               </div>
-              {q.chart && <div style={{ marginBottom: 12 }}><TaskChart spec={q.chart} /></div>}
+              {q.chart && <div style={{ marginBottom: 12 }}><TaskChart spec={q.chart} dark={theme === "dark"} /></div>}
               <p style={{ fontFamily: "Fraunces, serif", fontSize: 16.5, lineHeight: 1.5, margin: 0 }}>{q.text}</p>
               <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: "rgba(255,255,255,.55)" }}>{t("Translate:", "Tarjima:")}</span>
