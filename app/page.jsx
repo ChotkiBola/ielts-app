@@ -3,28 +3,22 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { TASKS, TASK_ORDER, VOCAB, ETYPE } from "./data";
 import TaskChart from "./TaskChart";
+import Auth from "./Auth";
+import { supabase, hasSupabase } from "./lib/supabase";
 
 const THEMES = {
-  light: {
-    ink: "#16203A", paper: "#FCFBF7", card: "#FFFFFF",
-    coral: "#FF5A4D", coralDark: "#E2402F", slate: "#5B6478",
-    line: "#E7E3D8", green: "#2E9E6B", amber: "#E8A33D", red: "#D9534F",
-    navy: "#16203A",
-  },
-  dark: {
-    ink: "#ECEAE3", paper: "#11141A", card: "#1B2030",
-    coral: "#FF6F62", coralDark: "#E2402F", slate: "#9099B5",
-    line: "#2B3145", green: "#3FBE85", amber: "#E8A33D", red: "#E2675F",
-    navy: "#0E1326",
-  },
+  light: { ink: "#16203A", paper: "#FCFBF7", card: "#FFFFFF", coral: "#FF5A4D", coralDark: "#E2402F", slate: "#5B6478", line: "#E7E3D8", green: "#2E9E6B", amber: "#E8A33D", red: "#D9534F", navy: "#16203A" },
+  dark:  { ink: "#ECEAE3", paper: "#11141A", card: "#1B2030", coral: "#FF6F62", coralDark: "#E2402F", slate: "#9099B5", line: "#2B3145", green: "#3FBE85", amber: "#E8A33D", red: "#E2675F", navy: "#0E1326" },
 };
-const HIST_KEY = "ielts:history", DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme";
+const DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme", HIST_KEY = "ielts:history";
 
 function countWords(s) { const t = s.trim(); return t ? t.split(/\s+/).length : 0; }
 function bandColor(b, C) { if (b >= 7) return C.green; if (b >= 6) return "#7BAE4A"; if (b >= 5) return C.amber; return C.red; }
 function fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
 const etype = (t) => ETYPE[t] || ETYPE.grammar;
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 600, fontFamily: "inherit", ...extra });
+const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra });
+const rowToVocabItem = (r) => ({ id: r.id, word: r.word, date: r.created_at });
 
 function buildSegments(essay, errors) {
   const used = [];
@@ -45,12 +39,7 @@ function buildSegments(essay, errors) {
 }
 
 function MiniCrit({ label, band, C }) {
-  return (
-    <div style={{ textAlign: "center", flex: 1 }}>
-      <div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: bandColor(band, C) }}>{Number(band).toFixed(1)}</div>
-      <div style={{ fontSize: 10, color: C.slate, marginTop: 2 }}>{label}</div>
-    </div>
-  );
+  return (<div style={{ textAlign: "center", flex: 1 }}><div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: bandColor(band, C) }}>{Number(band).toFixed(1)}</div><div style={{ fontSize: 10, color: C.slate, marginTop: 2 }}>{label}</div></div>);
 }
 
 function Trend({ data, C }) {
@@ -59,12 +48,7 @@ function Trend({ data, C }) {
   const xs = (i) => pad + (i * (w - 2 * pad)) / (data.length - 1);
   const ys = (v) => h - pad - ((Math.max(4, v) - 4) / 5) * (h - 2 * pad);
   const pts = data.map((v, i) => `${xs(i)},${ys(v)}`).join(" ");
-  return (
-    <svg width={w} height={h} style={{ display: "block", maxWidth: "100%" }}>
-      <polyline points={pts} fill="none" stroke={C.coral} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 600, strokeDashoffset: 0, animation: "draw 1s ease both" }} />
-      {data.map((v, i) => <circle key={i} cx={xs(i)} cy={ys(v)} r="3" fill={C.coral} />)}
-    </svg>
-  );
+  return (<svg width={w} height={h} style={{ display: "block", maxWidth: "100%" }}><polyline points={pts} fill="none" stroke={C.coral} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 600, animation: "draw 1s ease both" }} />{data.map((v, i) => <circle key={i} cx={xs(i)} cy={ys(v)} r="3" fill={C.coral} />)}</svg>);
 }
 
 function ExplainCard({ data, lang, C }) {
@@ -94,6 +78,8 @@ function Section({ title, count, open, onToggle, children, accent, delay, C }) {
 }
 
 export default function Home() {
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [tab, setTab] = useState("write");
   const [phase, setPhase] = useState("edit");
   const [lang, setLang] = useState("en");
@@ -124,7 +110,6 @@ export default function Home() {
   const [myVocab, setMyVocab] = useState([]);
   const [selBtn, setSelBtn] = useState(null);
   const [vMeaning, setVMeaning] = useState({});
-  // vocab search
   const [vq, setVq] = useState("");
   const [vRes, setVRes] = useState(null);
   const [vLoad, setVLoad] = useState(false);
@@ -138,10 +123,39 @@ export default function Home() {
   const words = countWords(essay);
   const minW = task.minWords;
 
+  // ---- auth ----
   useEffect(() => {
-    try { const raw = localStorage.getItem(HIST_KEY); if (raw) setHistory(JSON.parse(raw)); } catch (e) {}
+    if (!hasSupabase) { setAuthChecked(true); return; }
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthChecked(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // load history from DB when signed in (or from localStorage in local mode)
+  useEffect(() => {
+    if (hasSupabase) {
+      if (!session) { setHistory([]); return; }
+      supabase.from("history").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }).limit(50)
+        .then(({ data, error }) => { if (!error && data) setHistory(data.map(rowToItem)); });
+    } else {
+      try { const raw = localStorage.getItem(HIST_KEY); if (raw) setHistory(JSON.parse(raw)); } catch (e) {}
+    }
+  }, [session]);
+
+  // load vocab from DB when signed in (or from localStorage in local mode)
+  useEffect(() => {
+    if (hasSupabase) {
+      if (!session) { setMyVocab([]); return; }
+      supabase.from("vocab").select("*").eq("user_id", session.user.id).order("created_at", { ascending: false }).limit(200)
+        .then(({ data, error }) => { if (!error && data) setMyVocab(data.map(rowToVocabItem)); });
+    } else {
+      try { const mv = localStorage.getItem(VOCAB_KEY); if (mv) setMyVocab(JSON.parse(mv)); } catch (e) {}
+    }
+  }, [session]);
+
+  // local prefs (draft, theme, access)
+  useEffect(() => {
     try { const ac = localStorage.getItem("ielts:access"); if (ac) setAccessCode(ac); } catch (e) {}
-    try { const mv = localStorage.getItem(VOCAB_KEY); if (mv) setMyVocab(JSON.parse(mv)); } catch (e) {}
     try { const th = localStorage.getItem(THEME_KEY); if (th === "dark" || th === "light") setTheme(th); } catch (e) {}
     try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const o = JSON.parse(d); if (o.taskType && TASKS[o.taskType]) { setTaskType(o.taskType); setQIndex(o.qIndex || 0); setEssay(o.essay || ""); setSecondsLeft(TASKS[o.taskType].minutes * 60); } } } catch (e) {}
     restored.current = true;
@@ -150,16 +164,33 @@ export default function Home() {
   useEffect(() => { try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} }, [theme]);
   useEffect(() => { if (!running) return; if (secondsLeft <= 0) { setRunning(false); return; } const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000); return () => clearInterval(id); }, [running, secondsLeft]);
 
-  function persist(next) { setHistory(next); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} }
   function persistVocab(next) { setMyVocab(next); try { localStorage.setItem(VOCAB_KEY, JSON.stringify(next)); } catch (e) {} }
   function clearOutputs() { setResult(null); setError(""); setActiveErr(-1); setModelText(""); setImproved(null); setTrans(null); }
   function switchTask(tt) { setTaskType(tt); setQIndex(0); setEssay(""); clearOutputs(); setSecondsLeft(TASKS[tt].minutes * 60); setRunning(false); setPhase("edit"); }
   function newQuestion() { let i = qIndex; while (i === qIndex && bank.length > 1) i = Math.floor(Math.random() * bank.length); setQIndex(i); setEssay(""); clearOutputs(); }
+  async function logout() { setHistory([]); if (supabase) await supabase.auth.signOut(); }
 
   async function api(payload) {
     const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskType, question: q.text, qType: q.type, lang, chartSummary: q.chart ? q.chart.summary : null, password: accessCode, ...payload }) });
     return res.json();
+  }
+
+  async function saveAttempt(parsed) {
+    const item = { id: Date.now(), date: new Date().toISOString(), taskType, taskLabel: task.label.en, qType: q.type, qText: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band };
+    if (hasSupabase && session) {
+      const row = { user_id: session.user.id, task_type: taskType, task_label: task.label.en, q_type: q.type, q_text: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band };
+      const { data, error } = await supabase.from("history").insert(row).select().single();
+      if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
+      else setHistory((h) => [item, ...h].slice(0, 50));
+    } else {
+      const next = [item, ...history].slice(0, 50);
+      setHistory(next); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {}
+    }
+  }
+  async function deleteAttempt(id) {
+    if (hasSupabase && session) { await supabase.from("history").delete().eq("id", id); }
+    setHistory((h) => { const next = h.filter((x) => x.id !== id); if (!hasSupabase) { try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} } return next; });
   }
 
   async function evaluate() {
@@ -171,8 +202,7 @@ export default function Home() {
       if (parsed.error) { setError(parsed.error); setLoading(false); return; }
       parsed.scoredEssay = essay; setResult(parsed); setPhase("review");
       setOpen({ corrections: true, feedback: false, synonyms: false, improved: false, model: false });
-      const a = { id: Date.now(), date: new Date().toISOString(), taskType, taskLabel: task.label.en, qType: q.type, qText: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band };
-      persist([a, ...history].slice(0, 50));
+      await saveAttempt(parsed);
     } catch (e) { setError(t("Network error. Try again.", "Tarmoq xatosi. Qayta urinib ko'ring.")); }
     finally { setLoading(false); }
   }
@@ -181,39 +211,35 @@ export default function Home() {
   async function translate(target) { if (trans && trans.lang === target) { setTrans(null); return; } setTransLoading(target); try { const r = await api({ mode: "translate", target }); if (r.needPassword) { setShowGate(true); setTransLoading(""); return; } setTrans({ lang: target, text: r.text }); } catch (e) { setTrans({ lang: target, text: t("Translation failed.", "Tarjima xatosi.") }); } finally { setTransLoading(""); } }
   function saveGate() { setAccessCode(gateInput); try { localStorage.setItem("ielts:access", gateInput); } catch (e) {} setShowGate(false); setError(""); }
 
-  function addVocab(word) {
-    const w = (word || "").trim(); if (!w || w.length > 60) return;
-    if (!myVocab.some((x) => x.word.toLowerCase() === w.toLowerCase())) persistVocab([{ word: w, date: Date.now() }, ...myVocab].slice(0, 200));
+  async function addVocab(word) {
+    const w = (word || "").trim();
     setSelBtn(null);
     try { window.getSelection().removeAllRanges(); } catch (e) {}
+    if (!w || w.length > 60 || myVocab.some((x) => x.word.toLowerCase() === w.toLowerCase())) return;
+    if (hasSupabase && session) {
+      const { data, error } = await supabase.from("vocab").insert({ user_id: session.user.id, word: w }).select().single();
+      if (!error && data) setMyVocab((v) => [rowToVocabItem(data), ...v].slice(0, 200));
+      else if (error && error.code !== "23505") setMyVocab((v) => [{ word: w, date: Date.now() }, ...v].slice(0, 200));
+    } else {
+      persistVocab([{ word: w, date: Date.now() }, ...myVocab].slice(0, 200));
+    }
   }
-  function handleSelect(e) {
-    try {
-      const sel = window.getSelection();
-      const text = sel ? sel.toString().trim() : "";
-      const inSel = e.target.closest && e.target.closest(".sel");
-      if (text && text.length > 1 && text.length < 60 && inSel) { const rect = sel.getRangeAt(0).getBoundingClientRect(); setSelBtn({ text, x: rect.left + rect.width / 2, y: rect.top }); }
-      else setSelBtn(null);
-    } catch (err) { setSelBtn(null); }
+  async function deleteVocab(item, index) {
+    if (hasSupabase && session && item.id) { await supabase.from("vocab").delete().eq("id", item.id); }
+    setMyVocab((v) => { const next = v.filter((_, j) => j !== index); if (!hasSupabase) { try { localStorage.setItem(VOCAB_KEY, JSON.stringify(next)); } catch (e) {} } return next; });
   }
-  async function explainWord(w) {
-    if (vMeaning[w] && vMeaning[w] !== "loading") { setVMeaning((m) => ({ ...m, [w]: null })); return; }
-    setVMeaning((m) => ({ ...m, [w]: "loading" }));
-    try { const r = await api({ mode: "explain", word: w }); setVMeaning((m) => ({ ...m, [w]: r })); }
-    catch (e) { setVMeaning((m) => ({ ...m, [w]: { meaning: t("Failed.", "Xatolik."), examples: [] } })); }
-  }
-  async function searchVocab() {
-    const w = vq.trim(); if (!w) return;
-    setVLoad(true); setVRes(null);
-    try { const r = await api({ mode: "explain", word: w }); if (r.needPassword) { setShowGate(true); setVLoad(false); return; } setVRes({ word: w, data: r }); }
-    catch (e) { setVRes({ word: w, data: { meaning: t("Failed.", "Xatolik."), examples: [] } }); }
-    finally { setVLoad(false); }
-  }
+  function handleSelect(e) { try { const sel = window.getSelection(); const text = sel ? sel.toString().trim() : ""; const inSel = e.target.closest && e.target.closest(".sel"); if (text && text.length > 1 && text.length < 60 && inSel) { const rect = sel.getRangeAt(0).getBoundingClientRect(); setSelBtn({ text, x: rect.left + rect.width / 2, y: rect.top }); } else setSelBtn(null); } catch (err) { setSelBtn(null); } }
+  async function explainWord(w) { if (vMeaning[w] && vMeaning[w] !== "loading") { setVMeaning((m) => ({ ...m, [w]: null })); return; } setVMeaning((m) => ({ ...m, [w]: "loading" })); try { const r = await api({ mode: "explain", word: w }); setVMeaning((m) => ({ ...m, [w]: r })); } catch (e) { setVMeaning((m) => ({ ...m, [w]: { meaning: t("Failed.", "Xatolik."), examples: [] } })); } }
+  async function searchVocab() { const w = vq.trim(); if (!w) return; setVLoad(true); setVRes(null); try { const r = await api({ mode: "explain", word: w }); if (r.needPassword) { setShowGate(true); setVLoad(false); return; } setVRes({ word: w, data: r }); } catch (e) { setVRes({ word: w, data: { meaning: t("Failed.", "Xatolik."), examples: [] } }); } finally { setVLoad(false); } }
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
   const TABS = [["write", t("Write", "Yozish")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
   const firstLabel = task.first[lang];
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+
+  // ---- gates ----
+  if (!authChecked) return <main style={{ minHeight: "100vh", background: C.paper, color: C.slate, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif" }}>…</main>;
+  if (hasSupabase && !session) return <Auth C={C} lang={lang} onLang={setLang} />;
 
   return (
     <main onMouseUp={handleSelect} style={{ minHeight: "100vh", padding: "0 0 56px", background: C.paper, color: C.ink, transition: "background .25s ease, color .25s ease" }}>
@@ -237,11 +263,7 @@ export default function Home() {
         </div>
       )}
 
-      {selBtn && (
-        <button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.navy, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap", animation: "pop .15s ease both" })}>
-          ＋ {t("Add to my vocab", "Lug'atimga qo'shish")}
-        </button>
-      )}
+      {selBtn && (<button onMouseDown={(e) => { e.preventDefault(); addVocab(selBtn.text); }} style={btn({ position: "fixed", left: selBtn.x, top: selBtn.y - 42, transform: "translateX(-50%)", zIndex: 55, background: C.navy, color: "#fff", padding: "7px 12px", borderRadius: 8, fontSize: 12, boxShadow: "0 4px 14px rgba(0,0,0,.2)", whiteSpace: "nowrap", animation: "pop .15s ease both" })}>＋ {t("Add to my vocab", "Lug'atimga qo'shish")}</button>)}
 
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "28px 18px 0" }}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
@@ -254,9 +276,10 @@ export default function Home() {
               {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (<button key={k} onClick={() => setLang(k)} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: lang === k ? C.navy : "transparent", color: lang === k ? "#fff" : C.slate })}>{l}</button>))}
             </div>
             <div style={{ display: "flex", background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
-              <button onClick={() => setTheme("light")} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: theme === "light" ? C.navy : "transparent", color: theme === "light" ? "#fff" : C.slate })}>☀ {t("Day mode", "Kunduzgi rejim")}</button>
-              <button onClick={() => setTheme("dark")} style={btn({ padding: "6px 13px", borderRadius: 8, fontSize: 13, background: theme === "dark" ? C.navy : "transparent", color: theme === "dark" ? "#fff" : C.slate })}>☾ {t("Night mode", "Tungi rejim")}</button>
+              <button onClick={() => setTheme("light")} style={btn({ padding: "6px 11px", borderRadius: 8, fontSize: 13, background: theme === "light" ? C.navy : "transparent", color: theme === "light" ? "#fff" : C.slate })}>☀</button>
+              <button onClick={() => setTheme("dark")} style={btn({ padding: "6px 11px", borderRadius: 8, fontSize: 13, background: theme === "dark" ? C.navy : "transparent", color: theme === "dark" ? "#fff" : C.slate })}>☾</button>
             </div>
+            {hasSupabase && session && (<button onClick={logout} title={session.user.email} style={btn({ padding: "6px 12px", borderRadius: 8, fontSize: 12, background: C.card, border: `1px solid ${C.line}`, color: C.slate })}>{t("Log out", "Chiqish")}</button>)}
           </div>
         </header>
 
@@ -270,7 +293,6 @@ export default function Home() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
               {TASK_ORDER.map((tt) => (<button key={tt} onClick={() => switchTask(tt)} style={btn({ padding: "8px 14px", borderRadius: 999, fontSize: 13, border: `1px solid ${taskType === tt ? C.coral : C.line}`, background: taskType === tt ? C.coral : C.card, color: taskType === tt ? "#fff" : C.ink })}>{TASKS[tt].label[lang]}</button>))}
             </div>
-
             <div style={{ background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: C.coral, fontWeight: 700, background: "rgba(255,90,77,.14)", padding: "4px 10px", borderRadius: 999 }}>{q.type}</span>
@@ -285,16 +307,13 @@ export default function Home() {
               </div>
               {trans && <p className="anim" style={{ fontSize: 14, lineHeight: 1.55, margin: "12px 0 0", padding: "10px 12px", background: "rgba(255,255,255,.08)", borderRadius: 8, color: "rgba(255,255,255,.92)" }}>{trans.text}</p>}
             </div>
-
             <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "14px 0 10px", flexWrap: "wrap" }}>
               <span style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 20, color: secondsLeft < 300 ? C.coral : C.ink }}>{fmt(secondsLeft)}</span>
               <button onClick={() => setRunning((r) => !r)} style={btn({ background: C.card, border: `1px solid ${C.line}`, color: C.ink, padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>{running ? t("Pause", "Pauza") : t("Start", "Boshlash")}</button>
               <button onClick={() => { setSecondsLeft(task.minutes * 60); setRunning(false); }} style={btn({ background: "transparent", color: C.slate, padding: "6px 4px", fontSize: 12 })}>{t("Reset", "Tiklash")}</button>
               <span style={{ marginLeft: "auto", fontSize: 13, color: words >= minW ? C.green : C.slate, fontWeight: 600 }}>{words} {t("words", "so'z")} {words >= minW ? "✓" : `· ${minW - words}`}</span>
             </div>
-
             <textarea value={essay} onChange={(e) => setEssay(e.target.value)} placeholder={t("Start writing here…", "Shu yerga yozishni boshlang…")} style={{ width: "100%", minHeight: 300, padding: "8px 18px", border: `1px solid ${C.line}`, borderRadius: 12, fontSize: 16, lineHeight: "32px", color: C.ink, outline: "none", resize: "vertical", background: `repeating-linear-gradient(${C.card},${C.card} 31px,${C.line} 31px,${C.line} 32px)` }} />
-
             <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={evaluate} disabled={loading} style={btn({ background: loading ? C.coralDark : C.coral, color: "#fff", padding: "14px 26px", borderRadius: 12, fontSize: 15, opacity: loading ? .85 : 1 })}>{loading ? t("Scoring…", "Baholanmoqda…") : t("Score my essay →", "Baholash →")}</button>
               {result && <button onClick={() => setPhase("review")} style={btn({ background: C.card, border: `1px solid ${C.line}`, color: C.ink, padding: "12px 16px", borderRadius: 10, fontSize: 13 })}>{t("View my result →", "Natijamni ko'rish →")}</button>}
@@ -302,13 +321,7 @@ export default function Home() {
               {essay && <button onClick={() => { setEssay(""); clearOutputs(); }} style={btn({ background: "transparent", color: C.slate, fontSize: 13, marginLeft: "auto" })}>{t("Clear", "Tozalash")}</button>}
             </div>
             {error && <p style={{ color: C.red, fontSize: 13, marginTop: 12 }}>{error}</p>}
-            {modelText && (
-              <div className="sel anim" style={{ marginTop: 16, background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
-                <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 15, margin: "0 0 10px", color: C.coral }}>★ {t("Band-9 model answer", "Band-9 namuna javob")}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap" }}>{modelText}</p>
-                <p style={{ fontSize: 11, color: "rgba(255,255,255,.5)", margin: "10px 0 0" }}>{t("Tip: select any phrase to add it to your vocab.", "Maslahat: istalgan iborani belgilab lug'atingizga qo'shing.")}</p>
-              </div>
-            )}
+            {modelText && (<div className="sel anim" style={{ marginTop: 16, background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}><h3 style={{ fontFamily: "Fraunces, serif", fontSize: 15, margin: "0 0 10px", color: C.coral }}>★ {t("Band-9 model answer", "Band-9 namuna javob")}</h3><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap" }}>{modelText}</p><p style={{ fontSize: 11, color: "rgba(255,255,255,.5)", margin: "10px 0 0" }}>{t("Tip: select any phrase to add it to your vocab.", "Maslahat: istalgan iborani belgilab lug'atingizga qo'shing.")}</p></div>)}
           </div>
         )}
 
@@ -317,69 +330,36 @@ export default function Home() {
           <>
             <div className="anim" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                <div style={{ width: 64, height: 64, borderRadius: 16, background: `${bandColor(result.overall, C)}1A`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 26, color: bandColor(result.overall, C), lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span>
-                  <span style={{ fontSize: 8, color: C.slate, textTransform: "uppercase", letterSpacing: 1 }}>band</span>
-                </div>
-                <div style={{ display: "flex", flex: 1, minWidth: 200, gap: 6 }}>
-                  <MiniCrit label={taskType.startsWith("t1") ? "TA" : "TR"} band={result.tr.band} C={C} />
-                  <MiniCrit label="CC" band={result.cc.band} C={C} /><MiniCrit label="LR" band={result.lr.band} C={C} /><MiniCrit label="GRA" band={result.gra.band} C={C} />
-                </div>
+                <div style={{ width: 64, height: 64, borderRadius: 16, background: `${bandColor(result.overall, C)}1A`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 26, color: bandColor(result.overall, C), lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span><span style={{ fontSize: 8, color: C.slate, textTransform: "uppercase", letterSpacing: 1 }}>band</span></div>
+                <div style={{ display: "flex", flex: 1, minWidth: 200, gap: 6 }}><MiniCrit label={taskType.startsWith("t1") ? "TA" : "TR"} band={result.tr.band} C={C} /><MiniCrit label="CC" band={result.cc.band} C={C} /><MiniCrit label="LR" band={result.lr.band} C={C} /><MiniCrit label="GRA" band={result.gra.band} C={C} /></div>
                 <button onClick={() => setPhase("edit")} style={btn({ background: C.navy, color: "#fff", padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>← {t("Edit", "Tahrir")}</button>
               </div>
             </div>
-
             <Section title={t("Corrections", "Tuzatishlar")} count={(result.errors || []).length} open={open.corrections} onToggle={() => toggle("corrections")} delay={40} C={C}>
-              <div className="sel">
-                <p style={{ fontSize: 15.5, lineHeight: 1.9, margin: "0 0 14px", whiteSpace: "pre-wrap", color: C.ink }}>
-                  {segments.map((s, i) => s.e === null ? <span key={i}>{s.text}</span> : <span key={i} onClick={() => setActiveErr(s.e)} style={{ cursor: "pointer", borderRadius: 2, padding: "0 1px", borderBottom: `2px solid ${etype(result.errors[s.e].type).c}`, background: activeErr === s.e ? `${etype(result.errors[s.e].type).c}22` : "transparent" }}>{s.text}</span>)}
-                </p>
-              </div>
-              {(result.errors || []).map((e, i) => (
-                <div key={i} onClick={() => setActiveErr(i)} style={{ marginBottom: 10, cursor: "pointer", padding: 12, borderRadius: 10, background: activeErr === i ? `${etype(e.type).c}11` : "transparent", border: `1px solid ${activeErr === i ? etype(e.type).c : C.line}` }}>
-                  <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: etype(e.type).c, fontWeight: 700 }}>{etype(e.type)[lang]}</span>
-                  <div style={{ fontSize: 13, color: C.red, textDecoration: "line-through", opacity: .8, marginTop: 2 }}>{e.text}</div>
-                  <div style={{ fontSize: 14, color: C.green, fontWeight: 600 }}>{e.fix}</div>
-                  {e.rule && <div style={{ fontSize: 12, color: C.slate, marginTop: 5, paddingTop: 5, borderTop: `1px dashed ${C.line}` }}>💡 {e.rule}</div>}
-                </div>
-              ))}
+              <div className="sel"><p style={{ fontSize: 15.5, lineHeight: 1.9, margin: "0 0 14px", whiteSpace: "pre-wrap", color: C.ink }}>{segments.map((s, i) => s.e === null ? <span key={i}>{s.text}</span> : <span key={i} onClick={() => setActiveErr(s.e)} style={{ cursor: "pointer", borderRadius: 2, padding: "0 1px", borderBottom: `2px solid ${etype(result.errors[s.e].type).c}`, background: activeErr === s.e ? `${etype(result.errors[s.e].type).c}22` : "transparent" }}>{s.text}</span>)}</p></div>
+              {(result.errors || []).map((e, i) => (<div key={i} onClick={() => setActiveErr(i)} style={{ marginBottom: 10, cursor: "pointer", padding: 12, borderRadius: 10, background: activeErr === i ? `${etype(e.type).c}11` : "transparent", border: `1px solid ${activeErr === i ? etype(e.type).c : C.line}` }}><span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: etype(e.type).c, fontWeight: 700 }}>{etype(e.type)[lang]}</span><div style={{ fontSize: 13, color: C.red, textDecoration: "line-through", opacity: .8, marginTop: 2 }}>{e.text}</div><div style={{ fontSize: 14, color: C.green, fontWeight: 600 }}>{e.fix}</div>{e.rule && <div style={{ fontSize: 12, color: C.slate, marginTop: 5, paddingTop: 5, borderTop: `1px dashed ${C.line}` }}>💡 {e.rule}</div>}</div>))}
             </Section>
-
             <Section title={t("Feedback", "Fikr-mulohaza")} open={open.feedback} onToggle={() => toggle("feedback")} delay={80} C={C}>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.green }}>✓ {t("What worked", "Yaxshi tomonlari")}</h4>
               <ul style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.strengths || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.coral }}>→ {t("To improve", "Yaxshilash kerak")}</h4>
               <ul style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.improvements || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
-              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 10, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}>
-                <div><b style={{ color: C.ink }}>{firstLabel}:</b> {result.tr.note}</div>
-                <div><b style={{ color: C.ink }}>CC:</b> {result.cc.note}</div>
-                <div><b style={{ color: C.ink }}>LR:</b> {result.lr.note}</div>
-                <div><b style={{ color: C.ink }}>GRA:</b> {result.gra.note}</div>
-              </div>
+              <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 10, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}><div><b style={{ color: C.ink }}>{firstLabel}:</b> {result.tr.note}</div><div><b style={{ color: C.ink }}>CC:</b> {result.cc.note}</div><div><b style={{ color: C.ink }}>LR:</b> {result.lr.note}</div><div><b style={{ color: C.ink }}>GRA:</b> {result.gra.note}</div></div>
             </Section>
-
             {result.synonyms && result.synonyms.length > 0 && (
               <Section title={t("Word variety", "So'z xilma-xilligi")} count={result.synonyms.length} open={open.synonyms} onToggle={() => toggle("synonyms")} accent={C.coral} delay={120} C={C}>
                 <p style={{ fontSize: 12.5, color: C.slate, margin: "0 0 12px" }}>{t("Basic or repeated words — try these stronger alternatives:", "Oddiy yoki takror so'zlar — kuchliroq variantlar:")}</p>
-                {result.synonyms.map((s, i) => (
-                  <div key={i} style={{ marginBottom: 12 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{s.word}</span><span style={{ color: C.slate }}> → </span>
-                    {(s.alts || []).map((a, j) => <span key={j} style={{ display: "inline-block", fontSize: 13, color: C.green, fontWeight: 600, background: `${C.green}12`, padding: "3px 9px", borderRadius: 999, margin: "0 6px 6px 0" }}>{a}</span>)}
-                  </div>
-                ))}
+                {result.synonyms.map((s, i) => (<div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{s.word}</span><span style={{ color: C.slate }}> → </span>{(s.alts || []).map((a, j) => <span key={j} style={{ display: "inline-block", fontSize: 13, color: C.green, fontWeight: 600, background: `${C.green}12`, padding: "3px 9px", borderRadius: 999, margin: "0 6px 6px 0" }}>{a}</span>)}</div>))}
               </Section>
             )}
-
             <Section title={t("Improved version", "Yaxshilangan variant")} open={open.improved} onToggle={() => toggle("improved")} accent={C.green} delay={160} C={C}>
               {!improved && <button onClick={improveEssay} disabled={improveLoading} style={btn({ background: C.green, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{improveLoading ? t("Rewriting…", "Qayta yozilmoqda…") : t("Rewrite at band 8 →", "Band 8 darajada qayta yozish →")}</button>}
               {improved && (<div className="sel"><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap", color: C.ink }}>{improved.improved}</p>{improved.changes && improved.changes.length > 0 && <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}>{improved.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>}</div>)}
             </Section>
-
             <Section title={t("Model answer", "Namuna javob")} open={open.model} onToggle={() => toggle("model")} accent={C.coral} delay={200} C={C}>
               {!modelText && <button onClick={showModel} disabled={modelLoading} style={btn({ background: C.navy, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{modelLoading ? t("Loading…", "Yuklanmoqda…") : t("Show band-9 answer →", "Band-9 namuna →")}</button>}
               {modelText && <div className="sel"><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap", color: C.ink }}>{modelText}</p></div>}
             </Section>
-
             <p style={{ textAlign: "center", fontSize: 12, color: C.slate, marginTop: 8 }}>{t("Tip: select any text above to add it to your vocab.", "Maslahat: yuqoridagi istalgan matnni belgilab lug'atingizga qo'shing.")}</p>
           </>
         )}
@@ -387,51 +367,21 @@ export default function Home() {
         {/* VOCAB */}
         {tab === "vocab" && (
           <div className="anim">
-            {/* search */}
             <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={vq} onChange={(e) => setVq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchVocab(); }} placeholder={t("Search any English word…", "Istalgan inglizcha so'zni qidiring…")} style={{ flex: 1, padding: "11px 14px", border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 15, outline: "none", color: C.ink, background: C.card }} />
                 <button onClick={searchVocab} disabled={vLoad} style={btn({ background: C.coral, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{vLoad ? "…" : t("Search", "Qidir")}</button>
               </div>
-              {vRes && (
-                <div className="anim" style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: C.ink }}>{vRes.word}</span>
-                    <button onMouseDown={(e) => { e.preventDefault(); addVocab(vRes.word); }} style={btn({ background: C.navy, color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>＋ {t("Save", "Saqlash")}</button>
-                  </div>
-                  <ExplainCard data={vRes.data} lang={lang} C={C} />
-                </div>
-              )}
+              {vRes && (<div className="anim" style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}><span style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: C.ink }}>{vRes.word}</span><button onMouseDown={(e) => { e.preventDefault(); addVocab(vRes.word); }} style={btn({ background: C.navy, color: "#fff", padding: "6px 12px", borderRadius: 8, fontSize: 12 })}>＋ {t("Save", "Saqlash")}</button></div><ExplainCard data={vRes.data} lang={lang} C={C} /></div>)}
             </div>
-
             {myVocab.length > 0 && (
               <div style={{ background: C.card, border: `1px solid ${C.coral}`, borderRadius: 14, padding: 18, marginBottom: 20 }}>
                 <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 16, margin: "0 0 12px", color: C.ink }}>★ {t("My vocab", "Mening lug'atim")} ({myVocab.length})</h3>
-                {myVocab.map((v, i) => (
-                  <div key={i} style={{ borderBottom: `1px solid ${C.line}`, padding: "8px 0" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontWeight: 600, fontSize: 14, color: C.ink, flex: 1 }}>{v.word}</span>
-                      <button onClick={() => explainWord(v.word)} style={btn({ background: "transparent", color: C.coral, fontSize: 12 })}>{vMeaning[v.word] === "loading" ? "…" : t("Explain", "Izoh")}</button>
-                      <button onClick={() => persistVocab(myVocab.filter((_, j) => j !== i))} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button>
-                    </div>
-                    {vMeaning[v.word] && vMeaning[v.word] !== "loading" && <div style={{ marginTop: 4 }}><ExplainCard data={vMeaning[v.word]} lang={lang} C={C} /></div>}
-                  </div>
-                ))}
+                {myVocab.map((v, i) => (<div key={i} style={{ borderBottom: `1px solid ${C.line}`, padding: "8px 0" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontWeight: 600, fontSize: 14, color: C.ink, flex: 1 }}>{v.word}</span><button onClick={() => explainWord(v.word)} style={btn({ background: "transparent", color: C.coral, fontSize: 12 })}>{vMeaning[v.word] === "loading" ? "…" : t("Explain", "Izoh")}</button><button onClick={() => deleteVocab(v, i)} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button></div>{vMeaning[v.word] && vMeaning[v.word] !== "loading" && <div style={{ marginTop: 4 }}><ExplainCard data={vMeaning[v.word]} lang={lang} C={C} /></div>}</div>))}
               </div>
             )}
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-              {Object.keys(VOCAB).map((topic) => (<button key={topic} onClick={() => { setVocabTopic(topic); setFlipped(-1); }} style={btn({ padding: "9px 16px", borderRadius: 999, fontSize: 13, border: `1px solid ${vocabTopic === topic ? C.coral : C.line}`, background: vocabTopic === topic ? C.coral : C.card, color: vocabTopic === topic ? "#fff" : C.ink })}>{topic}</button>))}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
-              {VOCAB[vocabTopic].map((v, i) => (
-                <div key={i} className="anim" onClick={() => setFlipped(flipped === i ? -1 : i)} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, cursor: "pointer", minHeight: 120, animationDelay: `${i * 40}ms` }}>
-                  <div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: C.ink }}>{v.word}</div>
-                  <div style={{ fontSize: 12.5, color: C.slate, marginTop: 4 }}>{v.meaning}</div>
-                  {flipped === i ? <div style={{ fontSize: 13.5, color: C.green, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>“{v.ex}”</div> : <div style={{ fontSize: 11, color: C.coral, marginTop: 12, fontWeight: 600 }}>{t("Tap for example", "Misol uchun bosing")}</div>}
-                </div>
-              ))}
-            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>{Object.keys(VOCAB).map((topic) => (<button key={topic} onClick={() => { setVocabTopic(topic); setFlipped(-1); }} style={btn({ padding: "9px 16px", borderRadius: 999, fontSize: 13, border: `1px solid ${vocabTopic === topic ? C.coral : C.line}`, background: vocabTopic === topic ? C.coral : C.card, color: vocabTopic === topic ? "#fff" : C.ink })}>{topic}</button>))}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>{VOCAB[vocabTopic].map((v, i) => (<div key={i} className="anim" onClick={() => setFlipped(flipped === i ? -1 : i)} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, cursor: "pointer", minHeight: 120, animationDelay: `${i * 40}ms` }}><div style={{ fontFamily: "Fraunces, serif", fontWeight: 700, fontSize: 18, color: C.ink }}>{v.word}</div><div style={{ fontSize: 12.5, color: C.slate, marginTop: 4 }}>{v.meaning}</div>{flipped === i ? <div style={{ fontSize: 13.5, color: C.green, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>“{v.ex}”</div> : <div style={{ fontSize: 11, color: C.coral, marginTop: 12, fontWeight: 600 }}>{t("Tap for example", "Misol uchun bosing")}</div>}</div>))}</div>
           </div>
         )}
 
@@ -446,7 +396,7 @@ export default function Home() {
                   <div onClick={() => setExpanded(expanded === h.id ? -1 : h.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 16, cursor: "pointer" }}>
                     <div style={{ width: 50, height: 50, borderRadius: 12, background: `${bandColor(h.overall, C)}1A`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 20, color: bandColor(h.overall, C) }}>{Number(h.overall).toFixed(1)}</span></div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{h.taskLabel || "Task 2"} · {h.qType} · {h.words} {t("words", "so'z")}</div><div style={{ fontSize: 12, color: C.slate }}>{new Date(h.date).toLocaleString()}</div></div>
-                    <button onClick={(ev) => { ev.stopPropagation(); persist(history.filter((x) => x.id !== h.id)); }} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button>
+                    <button onClick={(ev) => { ev.stopPropagation(); deleteAttempt(h.id); }} style={btn({ background: "transparent", color: C.red, fontSize: 13 })}>✕</button>
                   </div>
                   {expanded === h.id && (<div style={{ padding: "0 16px 16px", borderTop: `1px solid ${C.line}` }}><div style={{ display: "flex", gap: 16, margin: "12px 0", fontSize: 12, color: C.slate }}><span>TR/TA {h.tr}</span><span>CC {h.cc}</span><span>LR {h.lr}</span><span>GRA {h.gra}</span></div><p style={{ fontSize: 13, color: C.ink, fontStyle: "italic", margin: "0 0 8px" }}>{h.qText}</p><p style={{ fontSize: 13.5, color: C.ink, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{h.essay}</p></div>)}
                 </div>
@@ -455,7 +405,7 @@ export default function Home() {
           </div>
         )}
 
-        <p style={{ textAlign: "center", color: C.slate, fontSize: 11, marginTop: 30, opacity: .7 }}>{t("Scores are AI estimates. Your work is saved in this browser.", "Baholar AI taxminiy. Ishingiz shu brauzerda saqlanadi.")}</p>
+        <p style={{ textAlign: "center", color: C.slate, fontSize: 11, marginTop: 30, opacity: .7 }}>{hasSupabase && session ? t("Signed in. Your history is saved to your account.", "Kirdingiz. Tarixingiz hisobingizga saqlanadi.") : t("Scores are AI estimates.", "Baholar AI taxminiy.")}</p>
       </div>
     </main>
   );
