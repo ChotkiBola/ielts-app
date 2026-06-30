@@ -3,11 +3,18 @@
 import React, { useState } from "react";
 import { supabase } from "./lib/supabase";
 
+const LEVELS = ["Beginner", "4.5 – 5.0", "5.5 – 6.0", "6.5 – 7.0", "7.5+", "Not sure"];
+const TARGETS = [5.5, 6, 6.5, 7, 7.5, 8];
+
 export default function Auth({ C, lang, onLang }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
-  const [mode, setMode] = useState("login"); // login | signup
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [level, setLevel] = useState("");
+  const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -16,12 +23,23 @@ export default function Auth({ C, lang, onLang }) {
     setErr(""); setMsg("");
     if (!email.trim() || !pass) { setErr(t("Enter email and password.", "Email va parolni kiriting.")); return; }
     if (pass.length < 6) { setErr(t("Password must be at least 6 characters.", "Parol kamida 6 ta belgi bo'lishi kerak.")); return; }
+    if (mode === "signup") {
+      if (!name.trim()) { setErr(t("Please enter your name.", "Ismingizni kiriting.")); return; }
+      if (!phone.trim()) { setErr(t("Please enter your phone number.", "Telefon raqamingizni kiriting.")); return; }
+    }
     if (!supabase) { setErr(t("Auth is not configured.", "Auth sozlanmagan.")); return; }
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email: email.trim(), password: pass });
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pass });
         if (error) throw error;
+        const uid = data.user && data.user.id;
+        if (uid) {
+          await supabase.from("profiles").insert({
+            user_id: uid, email: email.trim(), full_name: name.trim(), phone: phone.trim(),
+            level: level || null, target: target ? Number(target) : null,
+          });
+        }
         setMsg(t("Account created! Signing you in…", "Hisob yaratildi! Kirilmoqda…"));
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pass });
@@ -40,8 +58,8 @@ export default function Auth({ C, lang, onLang }) {
 
   return (
     <main style={{ minHeight: "100vh", background: C.paper, color: C.ink, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}} input:focus{box-shadow:0 0 0 3px rgba(255,90,77,.16)}`}</style>
-      <div style={{ width: 380, maxWidth: "100%", animation: "fadeUp .45s ease both" }}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}} input:focus,select:focus{box-shadow:0 0 0 3px rgba(255,90,77,.16)}`}</style>
+      <div style={{ width: 390, maxWidth: "100%", animation: "fadeUp .45s ease both" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
           <span style={{ width: 16, height: 16, background: C.coral, borderRadius: 3, transform: "rotate(45deg)" }} />
           <span style={{ fontFamily: "Fraunces, serif", fontWeight: 900, fontSize: 24, color: C.ink }}>IELTS Writing Coach</span>
@@ -55,7 +73,24 @@ export default function Auth({ C, lang, onLang }) {
             ))}
           </div>
 
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder={t("Email", "Email")} style={input} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
+          {mode === "signup" && (
+            <>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Full name *", "To'liq ism *")} style={input} />
+              <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder={t("Phone number *", "Telefon raqam *")} style={input} />
+              <div style={{ display: "flex", gap: 10 }}>
+                <select value={level} onChange={(e) => setLevel(e.target.value)} style={{ ...input, flex: 1, cursor: "pointer" }}>
+                  <option value="">{t("Current level", "Hozirgi daraja")}</option>
+                  {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ ...input, flex: 1, cursor: "pointer" }}>
+                  <option value="">{t("Target band", "Maqsad band")}</option>
+                  {TARGETS.map((b) => <option key={b} value={b}>{b.toFixed(1)}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" style={input} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
           <input value={pass} onChange={(e) => setPass(e.target.value)} type="password" placeholder={t("Password (min 6)", "Parol (kamida 6)")} style={input} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
 
           {err && <p style={{ color: C.red, fontSize: 13, margin: "0 0 10px" }}>{err}</p>}

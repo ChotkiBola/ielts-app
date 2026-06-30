@@ -124,6 +124,8 @@ export default function Home() {
   const [pKnown, setPKnown] = useState(0);
   const [pTotal, setPTotal] = useState(0);
   const [pMean, setPMean] = useState({});
+  const [profile, setProfile] = useState(null);
+  const [adminUsers, setAdminUsers] = useState(null);
   const restored = useRef(false);
 
   const C = THEMES[theme];
@@ -162,6 +164,12 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    if (!hasSupabase || !session) { setProfile(null); return; }
+    supabase.from("profiles").select("*").eq("user_id", session.user.id).single()
+      .then(({ data }) => { if (data) setProfile(data); });
+  }, [session]);
+
+  useEffect(() => {
     try { const ac = localStorage.getItem("ielts:access"); if (ac) setAccessCode(ac); } catch (e) {}
     try { const th = localStorage.getItem(THEME_KEY); if (th === "dark" || th === "light") setTheme(th); } catch (e) {}
     try { const tg = localStorage.getItem(TARGET_KEY); if (tg) setTargetBand(Number(tg)); } catch (e) {}
@@ -177,7 +185,7 @@ export default function Home() {
   function clearOutputs() { setResult(null); setError(""); setActiveErr(-1); setModelText(""); setImproved(null); setTrans(null); }
   function switchTask(tt) { setTaskType(tt); setQIndex(0); setEssay(""); clearOutputs(); setSecondsLeft(TASKS[tt].minutes * 60); setRunning(false); setPhase("edit"); }
   function newQuestion() { let i = qIndex; while (i === qIndex && bank.length > 1) i = Math.floor(Math.random() * bank.length); setQIndex(i); setEssay(""); clearOutputs(); }
-  async function logout() { setHistory([]); setMyVocab([]); if (supabase) await supabase.auth.signOut(); }
+  async function logout() { setHistory([]); setMyVocab([]); setProfile(null); setAdminUsers(null); if (supabase) await supabase.auth.signOut(); }
 
   async function api(payload) {
     const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -274,7 +282,15 @@ export default function Home() {
   }, [pMode, pIdx]);
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
+  const isAdmin = !!(profile && profile.is_admin);
   const TABS = [["write", t("Write", "Yozish")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
+  if (isAdmin) TABS.push(["admin", t("Admin", "Admin")]);
+  async function loadAdmin() {
+    if (!isAdmin || !supabase) return;
+    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    setAdminUsers(data || []);
+  }
+  useEffect(() => { if (tab === "admin" && isAdmin && adminUsers === null) loadAdmin(); }, [tab, isAdmin]);
   const firstLabel = task.first[lang];
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const BANDS = [5.5, 6, 6.5, 7, 7.5, 8];
@@ -541,6 +557,36 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {tab === "admin" && isAdmin && (
+          <div className="anim">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+              <h3 style={{ fontFamily: "Fraunces, serif", fontSize: 18, color: C.ink, margin: 0 }}>👥 {t("All users", "Barcha foydalanuvchilar")} {adminUsers ? `(${adminUsers.length})` : ""}</h3>
+              <button onClick={() => { setAdminUsers(null); loadAdmin(); }} style={btn({ background: C.card, border: `1px solid ${C.line}`, color: C.slate, padding: "7px 12px", borderRadius: 8, fontSize: 12 })}>↻ {t("Refresh", "Yangilash")}</button>
+            </div>
+            {adminUsers === null && <div style={{ textAlign: "center", color: C.slate, padding: 30 }}>…</div>}
+            {adminUsers && adminUsers.length === 0 && <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 14, padding: 30, textAlign: "center", color: C.slate }}>{t("No users yet.", "Hali foydalanuvchi yo'q.")}</div>}
+            {adminUsers && adminUsers.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {adminUsers.map((u) => (
+                  <div key={u.user_id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: C.ink }}>{u.full_name || t("(no name)", "(ismsiz)")}</span>
+                      {u.target != null && <span style={{ fontSize: 12, color: C.coral, fontWeight: 700 }}>🎯 {Number(u.target).toFixed(1)}</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 12.5, color: C.slate }}>
+                      {u.phone && <span>📞 {u.phone}</span>}
+                      {u.email && <span>✉ {u.email}</span>}
+                      {u.level && <span>📊 {u.level}</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.slate, marginTop: 6, opacity: .7 }}>{t("Joined", "Qo'shilgan")}: {new Date(u.created_at).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p style={{ textAlign: "center", color: C.slate, fontSize: 11, marginTop: 20, opacity: .7 }}>{t("Visible to admins only.", "Faqat adminlarga ko'rinadi.")}</p>
           </div>
         )}
 
