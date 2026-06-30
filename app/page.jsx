@@ -10,7 +10,7 @@ const THEMES = {
   light: { ink: "#16203A", paper: "#FCFBF7", card: "#FFFFFF", coral: "#FF5A4D", coralDark: "#E2402F", slate: "#5B6478", line: "#E7E3D8", green: "#2E9E6B", amber: "#E8A33D", red: "#D9534F", navy: "#16203A" },
   dark:  { ink: "#ECEAE3", paper: "#11141A", card: "#1B2030", coral: "#FF6F62", coralDark: "#E2402F", slate: "#9099B5", line: "#2B3145", green: "#3FBE85", amber: "#E8A33D", red: "#E2675F", navy: "#0E1326" },
 };
-const DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme", HIST_KEY = "ielts:history";
+const DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme", HIST_KEY = "ielts:history", TARGET_KEY = "ielts:target";
 
 function countWords(s) { const t = s.trim(); return t ? t.split(/\s+/).length : 0; }
 function bandColor(b, C) { if (b >= 7) return C.green; if (b >= 6) return "#7BAE4A"; if (b >= 5) return C.amber; return C.red; }
@@ -86,6 +86,7 @@ export default function Home() {
   const [taskType, setTaskType] = useState("t2");
   const [qIndex, setQIndex] = useState(0);
   const [essay, setEssay] = useState("");
+  const [targetBand, setTargetBand] = useState(7);
   const [secondsLeft, setSecondsLeft] = useState(TASKS.t2.minutes * 60);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -106,7 +107,7 @@ export default function Home() {
   const [gateInput, setGateInput] = useState("");
   const [trans, setTrans] = useState(null);
   const [transLoading, setTransLoading] = useState("");
-  const [open, setOpen] = useState({ corrections: true, feedback: false, synonyms: false, improved: false, model: false });
+  const [open, setOpen] = useState({ target: true, corrections: true, paragraphs: false, feedback: false, synonyms: false, improved: false, model: false });
   const [myVocab, setMyVocab] = useState([]);
   const [selBtn, setSelBtn] = useState(null);
   const [vMeaning, setVMeaning] = useState({});
@@ -123,7 +124,6 @@ export default function Home() {
   const words = countWords(essay);
   const minW = task.minWords;
 
-  // ---- auth ----
   useEffect(() => {
     if (!hasSupabase) { setAuthChecked(true); return; }
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthChecked(true); });
@@ -131,7 +131,6 @@ export default function Home() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // load history from DB when signed in (or from localStorage in local mode)
   useEffect(() => {
     if (hasSupabase) {
       if (!session) { setHistory([]); return; }
@@ -142,7 +141,6 @@ export default function Home() {
     }
   }, [session]);
 
-  // load vocab from DB when signed in (or from localStorage in local mode)
   useEffect(() => {
     if (hasSupabase) {
       if (!session) { setMyVocab([]); return; }
@@ -153,22 +151,23 @@ export default function Home() {
     }
   }, [session]);
 
-  // local prefs (draft, theme, access)
   useEffect(() => {
     try { const ac = localStorage.getItem("ielts:access"); if (ac) setAccessCode(ac); } catch (e) {}
     try { const th = localStorage.getItem(THEME_KEY); if (th === "dark" || th === "light") setTheme(th); } catch (e) {}
+    try { const tg = localStorage.getItem(TARGET_KEY); if (tg) setTargetBand(Number(tg)); } catch (e) {}
     try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const o = JSON.parse(d); if (o.taskType && TASKS[o.taskType]) { setTaskType(o.taskType); setQIndex(o.qIndex || 0); setEssay(o.essay || ""); setSecondsLeft(TASKS[o.taskType].minutes * 60); } } } catch (e) {}
     restored.current = true;
   }, []);
   useEffect(() => { if (!restored.current) return; try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ taskType, qIndex, essay })); } catch (e) {} }, [taskType, qIndex, essay]);
   useEffect(() => { try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} }, [theme]);
+  useEffect(() => { try { localStorage.setItem(TARGET_KEY, String(targetBand)); } catch (e) {} }, [targetBand]);
   useEffect(() => { if (!running) return; if (secondsLeft <= 0) { setRunning(false); return; } const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000); return () => clearInterval(id); }, [running, secondsLeft]);
 
   function persistVocab(next) { setMyVocab(next); try { localStorage.setItem(VOCAB_KEY, JSON.stringify(next)); } catch (e) {} }
   function clearOutputs() { setResult(null); setError(""); setActiveErr(-1); setModelText(""); setImproved(null); setTrans(null); }
   function switchTask(tt) { setTaskType(tt); setQIndex(0); setEssay(""); clearOutputs(); setSecondsLeft(TASKS[tt].minutes * 60); setRunning(false); setPhase("edit"); }
   function newQuestion() { let i = qIndex; while (i === qIndex && bank.length > 1) i = Math.floor(Math.random() * bank.length); setQIndex(i); setEssay(""); clearOutputs(); }
-  async function logout() { setHistory([]); if (supabase) await supabase.auth.signOut(); }
+  async function logout() { setHistory([]); setMyVocab([]); if (supabase) await supabase.auth.signOut(); }
 
   async function api(payload) {
     const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -197,17 +196,17 @@ export default function Home() {
     if (words < 40) { setError(t("Write at least a few sentences first.", "Avval bir necha jumla yozing.")); return; }
     setLoading(true); setError(""); setResult(null); setActiveErr(-1); setImproved(null);
     try {
-      const parsed = await api({ mode: "score", essay, words });
+      const parsed = await api({ mode: "score", essay, words, targetBand });
       if (parsed.needPassword) { setShowGate(true); setLoading(false); return; }
       if (parsed.error) { setError(parsed.error); setLoading(false); return; }
       parsed.scoredEssay = essay; setResult(parsed); setPhase("review");
-      setOpen({ corrections: true, feedback: false, synonyms: false, improved: false, model: false });
+      setOpen({ target: true, corrections: true, paragraphs: false, feedback: false, synonyms: false, improved: false, model: false });
       await saveAttempt(parsed);
     } catch (e) { setError(t("Network error. Try again.", "Tarmoq xatosi. Qayta urinib ko'ring.")); }
     finally { setLoading(false); }
   }
   async function showModel() { setModelLoading(true); setModelText(""); try { const r = await api({ mode: "model" }); if (r.needPassword) { setShowGate(true); setModelLoading(false); return; } setModelText(r.essay || r.error || ""); } catch (e) { setModelText(t("Network error.", "Tarmoq xatosi.")); } finally { setModelLoading(false); } }
-  async function improveEssay() { const src = result ? result.scoredEssay : essay; if (countWords(src) < 40) { setError(t("Write something first.", "Avval biror narsa yozing.")); return; } setImproveLoading(true); setImproved(null); try { const r = await api({ mode: "improve", essay: src, words: countWords(src), targetBand: 8 }); if (r.needPassword) { setShowGate(true); setImproveLoading(false); return; } setImproved(r); } catch (e) { setImproved({ improved: "", changes: [t("Network error.", "Tarmoq xatosi.")] }); } finally { setImproveLoading(false); } }
+  async function improveEssay() { const src = result ? result.scoredEssay : essay; if (countWords(src) < 40) { setError(t("Write something first.", "Avval biror narsa yozing.")); return; } setImproveLoading(true); setImproved(null); try { const r = await api({ mode: "improve", essay: src, words: countWords(src), targetBand }); if (r.needPassword) { setShowGate(true); setImproveLoading(false); return; } setImproved(r); } catch (e) { setImproved({ improved: "", changes: [t("Network error.", "Tarmoq xatosi.")] }); } finally { setImproveLoading(false); } }
   async function translate(target) { if (trans && trans.lang === target) { setTrans(null); return; } setTransLoading(target); try { const r = await api({ mode: "translate", target }); if (r.needPassword) { setShowGate(true); setTransLoading(""); return; } setTrans({ lang: target, text: r.text }); } catch (e) { setTrans({ lang: target, text: t("Translation failed.", "Tarjima xatosi.") }); } finally { setTransLoading(""); } }
   function saveGate() { setAccessCode(gateInput); try { localStorage.setItem("ielts:access", gateInput); } catch (e) {} setShowGate(false); setError(""); }
 
@@ -236,8 +235,8 @@ export default function Home() {
   const TABS = [["write", t("Write", "Yozish")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
   const firstLabel = task.first[lang];
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const BANDS = [5.5, 6, 6.5, 7, 7.5, 8];
 
-  // ---- gates ----
   if (!authChecked) return <main style={{ minHeight: "100vh", background: C.paper, color: C.slate, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif" }}>…</main>;
   if (hasSupabase && !session) return <Auth C={C} lang={lang} onLang={setLang} />;
 
@@ -287,11 +286,16 @@ export default function Home() {
           {TABS.map(([k, l]) => (<button key={k} onClick={() => setTab(k)} style={btn({ flex: 1, padding: "10px", borderRadius: 9, fontSize: 14, background: tab === k ? C.navy : "transparent", color: tab === k ? "#fff" : C.slate })}>{l}</button>))}
         </div>
 
-        {/* WRITE — EDIT */}
         {tab === "write" && phase === "edit" && (
           <div className="anim">
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
               {TASK_ORDER.map((tt) => (<button key={tt} onClick={() => switchTask(tt)} style={btn({ padding: "8px 14px", borderRadius: 999, fontSize: 13, border: `1px solid ${taskType === tt ? C.coral : C.line}`, background: taskType === tt ? C.coral : C.card, color: taskType === tt ? "#fff" : C.ink })}>{TASKS[tt].label[lang]}</button>))}
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: C.slate }}>🎯 {t("Target", "Maqsad")}</span>
+                <select value={targetBand} onChange={(e) => setTargetBand(Number(e.target.value))} style={{ padding: "6px 8px", borderRadius: 8, border: `1px solid ${C.line}`, background: C.card, color: C.ink, fontSize: 13, fontFamily: "inherit", cursor: "pointer", outline: "none" }}>
+                  {BANDS.map((b) => <option key={b} value={b}>{b.toFixed(1)}</option>)}
+                </select>
+              </div>
             </div>
             <div style={{ background: C.navy, color: "#fff", borderRadius: 14, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
@@ -325,7 +329,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* WRITE — REVIEW */}
         {tab === "write" && phase === "review" && result && (
           <>
             <div className="anim" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
@@ -335,11 +338,31 @@ export default function Home() {
                 <button onClick={() => setPhase("edit")} style={btn({ background: C.navy, color: "#fff", padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>← {t("Edit", "Tahrir")}</button>
               </div>
             </div>
+
+            {result.toTarget && (
+              <div className="anim" style={{ background: `${C.coral}10`, border: `1px solid ${C.coral}`, borderRadius: 14, padding: "14px 18px", marginBottom: 12 }}>
+                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: C.coral, fontWeight: 700, marginBottom: 4 }}>🎯 {t(`To reach band ${Number(targetBand).toFixed(1)}`, `Band ${Number(targetBand).toFixed(1)} uchun`)}</div>
+                <p style={{ fontSize: 14, color: C.ink, margin: 0, lineHeight: 1.55 }}>{result.toTarget}</p>
+              </div>
+            )}
+
             <Section title={t("Corrections", "Tuzatishlar")} count={(result.errors || []).length} open={open.corrections} onToggle={() => toggle("corrections")} delay={40} C={C}>
               <div className="sel"><p style={{ fontSize: 15.5, lineHeight: 1.9, margin: "0 0 14px", whiteSpace: "pre-wrap", color: C.ink }}>{segments.map((s, i) => s.e === null ? <span key={i}>{s.text}</span> : <span key={i} onClick={() => setActiveErr(s.e)} style={{ cursor: "pointer", borderRadius: 2, padding: "0 1px", borderBottom: `2px solid ${etype(result.errors[s.e].type).c}`, background: activeErr === s.e ? `${etype(result.errors[s.e].type).c}22` : "transparent" }}>{s.text}</span>)}</p></div>
               {(result.errors || []).map((e, i) => (<div key={i} onClick={() => setActiveErr(i)} style={{ marginBottom: 10, cursor: "pointer", padding: 12, borderRadius: 10, background: activeErr === i ? `${etype(e.type).c}11` : "transparent", border: `1px solid ${activeErr === i ? etype(e.type).c : C.line}` }}><span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: etype(e.type).c, fontWeight: 700 }}>{etype(e.type)[lang]}</span><div style={{ fontSize: 13, color: C.red, textDecoration: "line-through", opacity: .8, marginTop: 2 }}>{e.text}</div><div style={{ fontSize: 14, color: C.green, fontWeight: 600 }}>{e.fix}</div>{e.rule && <div style={{ fontSize: 12, color: C.slate, marginTop: 5, paddingTop: 5, borderTop: `1px dashed ${C.line}` }}>💡 {e.rule}</div>}</div>))}
             </Section>
-            <Section title={t("Feedback", "Fikr-mulohaza")} open={open.feedback} onToggle={() => toggle("feedback")} delay={80} C={C}>
+
+            {result.paragraphs && result.paragraphs.length > 0 && (
+              <Section title={t("Paragraph feedback", "Abzatslar bo'yicha")} count={result.paragraphs.length} open={open.paragraphs} onToggle={() => toggle("paragraphs")} accent={C.green} delay={70} C={C}>
+                {result.paragraphs.map((p, i) => (
+                  <div key={i} style={{ marginBottom: 12, paddingLeft: 12, borderLeft: `3px solid ${C.green}` }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: .5 }}>{p.label}</div>
+                    <div style={{ fontSize: 13.5, color: C.ink, marginTop: 2, lineHeight: 1.5 }}>{p.note}</div>
+                  </div>
+                ))}
+              </Section>
+            )}
+
+            <Section title={t("Feedback", "Fikr-mulohaza")} open={open.feedback} onToggle={() => toggle("feedback")} delay={100} C={C}>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.green }}>✓ {t("What worked", "Yaxshi tomonlari")}</h4>
               <ul style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.strengths || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
               <h4 style={{ fontFamily: "Fraunces, serif", fontSize: 14, margin: "0 0 6px", color: C.coral }}>→ {t("To improve", "Yaxshilash kerak")}</h4>
@@ -347,13 +370,13 @@ export default function Home() {
               <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 10, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}><div><b style={{ color: C.ink }}>{firstLabel}:</b> {result.tr.note}</div><div><b style={{ color: C.ink }}>CC:</b> {result.cc.note}</div><div><b style={{ color: C.ink }}>LR:</b> {result.lr.note}</div><div><b style={{ color: C.ink }}>GRA:</b> {result.gra.note}</div></div>
             </Section>
             {result.synonyms && result.synonyms.length > 0 && (
-              <Section title={t("Word variety", "So'z xilma-xilligi")} count={result.synonyms.length} open={open.synonyms} onToggle={() => toggle("synonyms")} accent={C.coral} delay={120} C={C}>
+              <Section title={t("Word variety", "So'z xilma-xilligi")} count={result.synonyms.length} open={open.synonyms} onToggle={() => toggle("synonyms")} accent={C.coral} delay={130} C={C}>
                 <p style={{ fontSize: 12.5, color: C.slate, margin: "0 0 12px" }}>{t("Basic or repeated words — try these stronger alternatives:", "Oddiy yoki takror so'zlar — kuchliroq variantlar:")}</p>
                 {result.synonyms.map((s, i) => (<div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{s.word}</span><span style={{ color: C.slate }}> → </span>{(s.alts || []).map((a, j) => <span key={j} style={{ display: "inline-block", fontSize: 13, color: C.green, fontWeight: 600, background: `${C.green}12`, padding: "3px 9px", borderRadius: 999, margin: "0 6px 6px 0" }}>{a}</span>)}</div>))}
               </Section>
             )}
             <Section title={t("Improved version", "Yaxshilangan variant")} open={open.improved} onToggle={() => toggle("improved")} accent={C.green} delay={160} C={C}>
-              {!improved && <button onClick={improveEssay} disabled={improveLoading} style={btn({ background: C.green, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{improveLoading ? t("Rewriting…", "Qayta yozilmoqda…") : t("Rewrite at band 8 →", "Band 8 darajada qayta yozish →")}</button>}
+              {!improved && <button onClick={improveEssay} disabled={improveLoading} style={btn({ background: C.green, color: "#fff", padding: "11px 18px", borderRadius: 10, fontSize: 14 })}>{improveLoading ? t("Rewriting…", "Qayta yozilmoqda…") : t(`Rewrite at band ${Number(targetBand).toFixed(1)} →`, `Band ${Number(targetBand).toFixed(1)} darajada qayta yozish →`)}</button>}
               {improved && (<div className="sel"><p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap", color: C.ink }}>{improved.improved}</p>{improved.changes && improved.changes.length > 0 && <ul style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}>{improved.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>}</div>)}
             </Section>
             <Section title={t("Model answer", "Namuna javob")} open={open.model} onToggle={() => toggle("model")} accent={C.coral} delay={200} C={C}>
@@ -364,7 +387,6 @@ export default function Home() {
           </>
         )}
 
-        {/* VOCAB */}
         {tab === "vocab" && (
           <div className="anim">
             <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 18 }}>
@@ -385,7 +407,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* HISTORY */}
         {tab === "history" && (
           <div className="anim">
             {history.length === 0 && <div style={{ background: C.card, border: `1px dashed ${C.line}`, borderRadius: 14, padding: 30, textAlign: "center", color: C.slate }}><p style={{ fontSize: 14, margin: 0 }}>{t("No essays scored yet.", "Hali baholangan essay yo'q.")}</p></div>}

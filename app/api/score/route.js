@@ -45,6 +45,8 @@ function mockScore(essay, words, lang) {
     improvements: uz ? ["(Namuna) Misollarni kengaytiring", "Takror so'zlarni almashtiring", "Xulosani kuchaytiring"] : ["(Demo) Develop examples", "Replace repeated words", "Strengthen the conclusion"],
     errors,
     synonyms: [{ word: "good", alts: ["beneficial", "advantageous", "valuable"] }],
+    paragraphs: [{ label: uz ? "Kirish" : "Introduction", note: uz ? "(Namuna) Pozitsiyani aniqroq bering." : "(Demo) State your position more clearly." }, { label: uz ? "Asosiy qism" : "Body", note: uz ? "(Namuna) Misol bilan kuchaytiring." : "(Demo) Support with an example." }],
+    toTarget: uz ? "(Namuna) Maqsadli band uchun murakkab gaplar va aniq misollar qo'shing." : "(Demo) Add complex sentences and concrete examples to reach your target band.",
     demo: true,
   };
 }
@@ -116,9 +118,11 @@ export async function POST(request) {
       parsed = mockScore(essay, words || 0, lang);
     } else {
       const t1note = taskType.startsWith("t1") ? ` Because this is Task 1, also judge whether the candidate accurately reports and compares the data; penalise factual misreadings under ${tm.first}.` : "";
-      const system = `You are a certified IELTS Writing examiner. Score the candidate's ${tm.name} using the official band descriptors for the four criteria: ${tm.first} (tr), Coherence and Cohesion (cc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. If under ${tm.min} words, penalise ${tm.first}.${t1note} Respond with MINIFIED JSON ONLY (no markdown/fences), exactly: {"tr":{"band":N,"note":"S"},"cc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"strengths":["S","S"],"improvements":["S","S","S"],"errors":[{"text":"EXACT phrase from the answer","fix":"correction","type":"grammar|vocabulary|spelling|cohesion","rule":"the short grammar or usage rule that explains the fix, so the learner understands WHY"}],"synonyms":[{"word":"an overused or basic word from the answer","alts":["better1","better2","better3"]}]}. The "tr" key holds the ${tm.first} score. Up to 6 errors; each "text" MUST be an exact substring of the answer. Up to 3 synonyms entries. Each "note" is one concise sentence. Write note/strengths/improvements/rule in ${language}; "fix" and "alts" always in English.`;
+      const tgt = Number(targetBand) || null;
+      const tgtNote = tgt ? ` The candidate is aiming for band ${tgt}. In "toTarget", state in one or two concrete sentences the single most important thing currently keeping them below band ${tgt} and exactly what to do about it.` : "";
+      const system = `You are a certified IELTS Writing examiner. Score the candidate's ${tm.name} using the official band descriptors for the four criteria: ${tm.first} (tr), Coherence and Cohesion (cc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. If under ${tm.min} words, penalise ${tm.first}.${t1note}${tgtNote} Respond with MINIFIED JSON ONLY (no markdown/fences), exactly: {"tr":{"band":N,"note":"S"},"cc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"strengths":["S","S"],"improvements":["S","S","S"],"errors":[{"text":"EXACT phrase from the answer","fix":"correction","type":"grammar|vocabulary|spelling|cohesion","rule":"the short grammar or usage rule that explains the fix, so the learner understands WHY"}],"synonyms":[{"word":"an overused or basic word from the answer","alts":["better1","better2","better3"]}],"paragraphs":[{"label":"a 2-4 word tag for the paragraph e.g. Introduction / Body 1 / Conclusion","note":"one concise sentence of feedback on that paragraph"}],"toTarget":"${tgt ? "see instructions" : ""}"}. The "tr" key holds the ${tm.first} score. Up to 6 errors; each "text" MUST be an exact substring of the answer. Up to 3 synonyms entries. Provide one "paragraphs" entry per paragraph the candidate actually wrote (in order). Each "note" is one concise sentence. Write note/strengths/improvements/rule/paragraphs notes/toTarget in ${language}; "fix" and "alts" always in English.`;
       const userMsg = `${prompt}\n\nCandidate answer (${words || ""} words):\n${essay}`;
-      const clean = await callClaude(system, userMsg, 1700);
+      const clean = await callClaude(system, userMsg, 2100);
       try { parsed = JSON.parse(clean); }
       catch { return Response.json({ error: "Could not parse examiner output. Please try again." }, { status: 502 }); }
     }
