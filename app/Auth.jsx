@@ -6,9 +6,9 @@ import { supabase } from "./lib/supabase";
 const LEVELS = ["Beginner", "4.5 – 5.0", "5.5 – 6.0", "6.5 – 7.0", "7.5+", "Not sure"];
 const TARGETS = [5.5, 6, 6.5, 7, 7.5, 8];
 
-export default function Auth({ C, lang, onLang }) {
+export default function Auth({ C, lang, onLang, initialMode, onBack }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState(initialMode || "login");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [name, setName] = useState("");
@@ -101,10 +101,13 @@ export default function Auth({ C, lang, onLang }) {
           </button>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }}>
-          {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (
-            <button key={k} onClick={() => onLang(k)} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, border: `1px solid ${C.line}`, cursor: "pointer", fontWeight: 600, fontFamily: "inherit", background: lang === k ? C.navy : "transparent", color: lang === k ? "#fff" : C.slate }}>{l}</button>
-          ))}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 16 }}>
+          {onBack && <button onClick={onBack} style={{ background: "transparent", border: "none", cursor: "pointer", color: C.slate, fontSize: 13, fontFamily: "inherit" }}>← {t("Home", "Bosh sahifa")}</button>}
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (
+              <button key={k} onClick={() => onLang(k)} style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, border: `1px solid ${C.line}`, cursor: "pointer", fontWeight: 600, fontFamily: "inherit", background: lang === k ? C.navy : "transparent", color: lang === k ? "#fff" : C.slate }}>{l}</button>
+            ))}
+          </div>
         </div>
       </div>
     </main>

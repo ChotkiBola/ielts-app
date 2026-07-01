@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { TASKS, TASK_ORDER, VOCAB, ETYPE } from "./data";
 import TaskChart from "./TaskChart";
 import Auth from "./Auth";
+import Landing from "./Landing";
 import { supabase, hasSupabase } from "./lib/supabase";
 
 const THEMES = {
@@ -81,6 +82,8 @@ function Section({ title, count, open, onToggle, children, accent, delay, C }) {
 export default function Home() {
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
   const [tab, setTab] = useState("write");
   const [phase, setPhase] = useState("edit");
   const [lang, setLang] = useState("en");
@@ -296,7 +299,11 @@ export default function Home() {
   const BANDS = [5.5, 6, 6.5, 7, 7.5, 8];
 
   if (!authChecked) return <main style={{ minHeight: "100vh", background: C.paper, color: C.slate, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif" }}>…</main>;
-  if (hasSupabase && !session) return <Auth C={C} lang={lang} onLang={setLang} />;
+  if (hasSupabase && !session) {
+    return showAuth
+      ? <Auth C={C} lang={lang} onLang={setLang} initialMode={authMode} onBack={() => setShowAuth(false)} />
+      : <Landing C={C} lang={lang} onLang={setLang} onStart={(m) => { setAuthMode(m || "login"); setShowAuth(true); }} />;
+  }
 
   return (
     <main onMouseUp={handleSelect} style={{ minHeight: "100vh", padding: "0 0 56px", background: C.paper, color: C.ink, transition: "background .25s ease, color .25s ease" }}>
