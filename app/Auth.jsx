@@ -10,12 +10,6 @@ const sans = "'Plus Jakarta Sans', system-ui, sans-serif";
 const LEVELS = ["Beginner", "4.5 – 5.0", "5.5 – 6.0", "6.5 – 7.0", "7.5+", "Not sure"];
 const TARGETS = [5.5, 6, 6.5, 7, 7.5, 8];
 
-const inp = {
-  border: "1px solid rgba(42,33,30,0.14)", background: "#FFFCF9", borderRadius: 12,
-  padding: "14px 16px", fontFamily: "inherit", fontSize: 15, color: ink,
-  outline: "none", transition: "all .2s", width: "100%", boxSizing: "border-box",
-};
-
 export default function Auth({ lang, onLang, initialMode, onBack }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const [mode, setMode] = useState(initialMode || "login");
@@ -64,50 +58,61 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
     }
   }
 
-  const tabGrad = `linear-gradient(120deg,${coral},${orange})`;
   const isSignup = mode === "signup";
+  const tabGrad = `linear-gradient(120deg,${coral},${orange})`;
+
+  const inp = {
+    border: "1px solid rgba(42,33,30,0.14)", background: "#FFFCF9", borderRadius: 12,
+    padding: "13px 15px", fontFamily: "inherit", fontSize: 15, color: ink,
+    outline: "none", transition: "border-color .2s, box-shadow .2s",
+    width: "100%", boxSizing: "border-box", display: "block",
+  };
 
   return (
-    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", background: "linear-gradient(180deg,#FFF1E4,#FFF6ED)", fontFamily: sans }}>
+    <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 16px", background: "linear-gradient(180deg,#FFF1E4,#FFF6ED)", fontFamily: sans }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800&display=swap');
         @keyframes aauroraA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,-40px) scale(1.15)}}
         @keyframes aauroraB{0%,100%{transform:translate(0,0) scale(1.05)}50%{transform:translate(-50px,40px) scale(0.92)}}
         @keyframes afadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
         .ainp:focus{border-color:#FF6A4D!important;background:#fff!important;box-shadow:0 0 0 3px rgba(255,106,77,0.14)!important}
-        .asubmit:not(:disabled):hover{transform:translateY(-2px)!important}
+        @media(hover:hover){.asubmit:not(:disabled):hover{transform:translateY(-2px)!important}}
+
+        /* level/target grid stacks on very small screens */
+        .asel-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        @media(max-width:400px){.asel-grid{grid-template-columns:1fr}}
       `}</style>
 
       {/* aurora blobs */}
-      <div style={{ position: "absolute", top: -120, left: -80, width: 460, height: 460, borderRadius: "50%", background: `radial-gradient(circle,${coral} 0%,rgba(255,106,77,0) 68%)`, opacity: 0.22, filter: "blur(20px)", animation: "aauroraA 14s ease-in-out infinite", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", bottom: -140, right: -80, width: 480, height: 480, borderRadius: "50%", background: `radial-gradient(circle,${amber} 0%,rgba(255,165,36,0) 68%)`, opacity: 0.22, filter: "blur(20px)", animation: "aauroraB 17s ease-in-out infinite", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: -120, left: -80, width: 420, height: 420, borderRadius: "50%", background: `radial-gradient(circle,${coral} 0%,rgba(255,106,77,0) 68%)`, opacity: 0.20, filter: "blur(20px)", animation: "aauroraA 14s ease-in-out infinite", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: -140, right: -80, width: 440, height: 440, borderRadius: "50%", background: `radial-gradient(circle,${amber} 0%,rgba(255,165,36,0) 68%)`, opacity: 0.20, filter: "blur(20px)", animation: "aauroraB 17s ease-in-out infinite", pointerEvents: "none" }} />
 
-      <div style={{ position: "relative", width: "100%", maxWidth: 440, animation: "afadeUp .45s ease both" }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: 420, animation: "afadeUp .45s ease both" }}>
         {/* logo */}
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 24, height: 24, background: `linear-gradient(135deg,${coral},${amber})`, borderRadius: 6, transform: "rotate(45deg)", boxShadow: "0 4px 14px rgba(255,106,77,0.4)" }} />
-            <span style={{ fontFamily: serif, fontSize: 26, color: ink }}>IELTS Writing Coach</span>
+            <div style={{ width: 22, height: 22, background: `linear-gradient(135deg,${coral},${amber})`, borderRadius: 6, transform: "rotate(45deg)", boxShadow: "0 4px 14px rgba(255,106,77,0.4)", flexShrink: 0 }} />
+            <span style={{ fontFamily: serif, fontSize: "clamp(20px,5vw,26px)", color: ink }}>IELTS Writing Coach</span>
           </div>
-          <p style={{ fontSize: 15, color: muted, margin: "10px 0 0" }}>{t("Sign in to track your progress","Natijalaringizni kuzatish uchun kiring")}</p>
+          <p style={{ fontSize: 14, color: muted, margin: "8px 0 0" }}>{t("Sign in to track your progress","Natijalaringizni kuzatish uchun kiring")}</p>
         </div>
 
         {/* card */}
-        <div style={{ background: "#fff", borderRadius: 22, padding: 26, boxShadow: "0 30px 70px rgba(42,33,30,0.14)", border: "1px solid rgba(42,33,30,0.05)" }}>
+        <div style={{ background: "#fff", borderRadius: 22, padding: "22px 20px", boxShadow: "0 30px 70px rgba(42,33,30,0.13)", border: "1px solid rgba(42,33,30,0.05)" }}>
           {/* tab toggle */}
-          <div style={{ display: "flex", background: "#FFF1E4", borderRadius: 13, padding: 5, gap: 4, marginBottom: 22 }}>
+          <div style={{ display: "flex", background: "#FFF1E4", borderRadius: 13, padding: 5, gap: 4, marginBottom: 20 }}>
             {[["login", t("Log in","Kirish")], ["signup", t("Sign up","Ro'yxatdan o'tish")]].map(([k, l]) => (
               <button key={k} onClick={() => { setMode(k); setErr(""); setMsg(""); }}
-                style={{ flex: 1, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 15, padding: 11, borderRadius: 9, background: mode === k ? tabGrad : "transparent", color: mode === k ? "#fff" : muted, boxShadow: mode === k ? "0 6px 16px rgba(255,106,77,0.35)" : "none", transition: "all .2s" }}>{l}</button>
+                style={{ flex: 1, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "10px 8px", borderRadius: 9, background: mode === k ? tabGrad : "transparent", color: mode === k ? "#fff" : muted, boxShadow: mode === k ? "0 6px 16px rgba(255,106,77,0.32)" : "none", transition: "all .2s" }}>{l}</button>
             ))}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {isSignup && (
               <>
                 <input className="ainp" value={name} onChange={e => setName(e.target.value)} placeholder={t("Full name *","To'liq ism *")} style={inp} />
                 <input className="ainp" value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder={t("Phone number *","Telefon raqam *")} style={inp} />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 13 }}>
+                <div className="asel-grid">
                   <select className="ainp" value={level} onChange={e => setLevel(e.target.value)} style={{ ...inp, cursor: "pointer", color: level ? ink : muted }}>
                     <option value="">{t("Current level","Hozirgi daraja")}</option>
                     {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
@@ -122,20 +127,20 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
             <input className="ainp" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email" style={inp} onKeyDown={e => e.key === "Enter" && submit()} />
             <input className="ainp" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder={t("Password (min 6)","Parol (kamida 6)")} style={inp} onKeyDown={e => e.key === "Enter" && submit()} />
 
-            {err && <p style={{ color: "#E03E2F", fontSize: 13, margin: 0 }}>{err}</p>}
-            {msg && <p style={{ color: "#1F9E73", fontSize: 13, margin: 0 }}>{msg}</p>}
+            {err && <p style={{ color: "#E03E2F", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{err}</p>}
+            {msg && <p style={{ color: "#1F9E73", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{msg}</p>}
 
             <button className="asubmit" onClick={submit} disabled={busy}
-              style={{ marginTop: 6, border: "none", cursor: busy ? "default" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 16, padding: 15, borderRadius: 13, color: "#fff", background: `linear-gradient(120deg,${coral},${orange})`, boxShadow: "0 12px 26px rgba(255,106,77,0.4)", transition: "transform .18s", opacity: busy ? 0.8 : 1 }}>
+              style={{ marginTop: 4, border: "none", cursor: busy ? "default" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 13, color: "#fff", background: `linear-gradient(120deg,${coral},${orange})`, boxShadow: "0 10px 24px rgba(255,106,77,0.38)", transition: "transform .18s", opacity: busy ? 0.8 : 1, width: "100%" }}>
               {busy ? t("Please wait…","Kuting…") : isSignup ? t("Create account","Hisob yaratish") : t("Log in →","Kirish →")}
             </button>
           </div>
         </div>
 
         {/* bottom row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 22 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 20, flexWrap: "wrap" }}>
           {onBack && (
-            <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: muted }}>← {t("Home","Bosh sahifa")}</button>
+            <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: muted, padding: "4px 0" }}>← {t("Home","Bosh sahifa")}</button>
           )}
           <div style={{ display: "flex", background: peach, borderRadius: 11, padding: 4, gap: 2 }}>
             {[["en","EN"],["uz","UZ"]].map(([k,l]) => (
