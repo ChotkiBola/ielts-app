@@ -5,6 +5,7 @@ import { TASKS, TASK_ORDER, VOCAB, ETYPE } from "./data";
 import TaskChart from "./TaskChart";
 import Auth from "./Auth";
 import Landing from "./Landing";
+import Speaking from "./Speaking";
 import { supabase, hasSupabase } from "./lib/supabase";
 
 // CSS-variable palette (tokens live in globals.css .app-root)
@@ -294,7 +295,7 @@ export default function Home() {
   }, [pMode, pIdx]);
 
   const isAdmin = !!(profile && profile.is_admin);
-  const TABS = [["write", t("Write", "Yozish")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
+  const TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
   if (isAdmin) TABS.push(["admin", "Admin"]);
   async function loadAdmin() {
     if (!isAdmin || !supabase) return;
@@ -601,6 +602,22 @@ export default function Home() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>{Object.keys(VOCAB).map((topic) => (<button key={topic} onClick={() => { setVocabTopic(topic); setFlipped(-1); }} style={chip(vocabTopic === topic)}>{topic}</button>))}</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>{VOCAB[vocabTopic].map((v, i) => (<div key={i} className="anim" onClick={() => setFlipped(flipped === i ? -1 : i)} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 16, padding: 19, cursor: "pointer", minHeight: 122, animationDelay: `${i * 40}ms`, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontFamily: serif, fontSize: 18, color: V.text }}>{v.word}</div><div style={{ fontSize: 12.5, color: V.muted, marginTop: 4 }}>{v.meaning}</div>{flipped === i ? <div style={{ fontSize: 13.5, color: V.good, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>“{v.ex}”</div> : <div style={{ fontSize: 11, color: V.accent, marginTop: 12, fontWeight: 700 }}>{t("Tap for example", "Misol uchun bosing")}</div>}</div>))}</div>
           </div>
+        )}
+
+        {/* ============ SPEAKING ============ */}
+        {tab === "speaking" && (
+          <Speaking lang={lang} accessCode={accessCode} onNeedCode={() => setShowGate(true)}
+            onSave={async (r, transcript, setName) => {
+              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band };
+              if (hasSupabase && session) {
+                const row = { user_id: session.user.id, task_type: "spk", task_label: "Speaking", q_type: setName, q_text: "Speaking mock (Parts 1-3)", essay: transcript, words: item.words, overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band };
+                const { data, error } = await supabase.from("history").insert(row).select().single();
+                if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
+                else setHistory((h) => [item, ...h].slice(0, 50));
+              } else {
+                setHistory((h) => { const next = [item, ...h].slice(0, 50); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} return next; });
+              }
+            }} />
         )}
 
         {/* ============ HISTORY ============ */}

@@ -140,3 +140,23 @@ export const VOCAB = {
     { word: "transferable skills", meaning: "skills usable across jobs", ex: "Communication is a valuable transferable skill." },
   ],
 };
+export const SPEAKING = [
+  {
+    name: "Hometown & Free time",
+    p1: ["Let's talk about your hometown. Where is it, and what do you like about living there?", "How do you usually spend your free time?", "Do you prefer spending time indoors or outdoors? Why?"],
+    cue: { topic: "Describe a place in your city you like to visit.", points: ["where it is", "how often you go there", "what you do there", "and explain why you like it"] },
+    p3: ["How have the places where people relax changed over the last few decades?", "Do you think cities should invest more in public spaces? Why or why not?"],
+  },
+  {
+    name: "Study & Technology",
+    p1: ["Do you work or are you a student?", "What subject do you find most interesting, and why?", "How often do you use technology for studying?"],
+    cue: { topic: "Describe a piece of technology you find useful for learning.", points: ["what it is", "how you use it", "how often you use it", "and explain why it is useful"] },
+    p3: ["How has technology changed the way people learn languages?", "Do you think teachers could be replaced by technology in the future?"],
+  },
+  {
+    name: "Travel & Food",
+    p1: ["Do you enjoy travelling? Why or why not?", "What kind of food do you usually eat with your family?", "Have you ever tried food from another country?"],
+    cue: { topic: "Describe a memorable trip you have taken.", points: ["where you went", "who you went with", "what you did there", "and explain why it was memorable"] },
+    p3: ["Why do you think international travel has become so popular?", "What are the advantages and disadvantages of tourism for a country like yours?"],
+  },
+];

@@ -111,6 +111,19 @@ export async function POST(request) {
       try { return Response.json(JSON.parse(clean)); } catch { return Response.json({ improved: clean, changes: [] }); }
     }
 
+    if (mode === "speakScore") {
+      const transcript = body.transcript;
+      if (!transcript) return Response.json({ error: "No transcript." }, { status: 400 });
+      if (!hasKey) return Response.json({ fc: { band: 6, note: "(demo)" }, lr: { band: 6, note: "(demo)" }, gra: { band: 6, note: "(demo)" }, overall: 6, strengths: ["(demo)"], improvements: ["(demo)"], pron_note: "(demo) Add an API key for real scoring." });
+      const system = `You are a certified IELTS Speaking examiner. You are given the transcript of a shortened mock IELTS Speaking test (Parts 1-3). Lines starting with "Examiner:" are the examiner; lines starting with "Candidate:" are the candidate. Score ONLY the candidate using official IELTS Speaking band descriptors for: Fluency and Coherence (fc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. Pronunciation cannot be assessed from a transcript, so do NOT score it; instead write one honest sentence in "pron_note" explaining it was not assessed. Respond with MINIFIED JSON ONLY: {"fc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"strengths":["S","S"],"improvements":["S","S","S"],"pron_note":"S"}. Each note one concise sentence. Write all text in ${language}.`;
+      const clean = await callClaude(system, `Transcript:\n${transcript}`, 1200);
+      let parsed;
+      try { parsed = JSON.parse(clean); } catch { return Response.json({ error: "Could not parse examiner output. Try again." }, { status: 502 }); }
+      const bs = [parsed?.fc?.band, parsed?.lr?.band, parsed?.gra?.band].filter((x) => typeof x === "number");
+      if (bs.length === 3) parsed.overall = Math.round((bs.reduce((a, b) => a + b, 0) / 3) * 2) / 2;
+      return Response.json(parsed);
+    }
+
     // SCORE
     if (!essay || typeof essay !== "string") return Response.json({ error: "No essay provided." }, { status: 400 });
     let parsed;
