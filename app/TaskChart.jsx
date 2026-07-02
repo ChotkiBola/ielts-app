@@ -1,8 +1,8 @@
 import React from "react";
 
 const PALETTE = {
-  light: { ink: "#16203A", slate: "#5B6478", line: "#E7E3D8", grid: "#EEEBE3", paper: "#FFFFFF", step: "#F7F5EF" },
-  dark:  { ink: "#ECEAE3", slate: "#9099B5", line: "#2B3145", grid: "#2B3145", paper: "#222A3C", step: "#1B2030" },
+  light: { ink: "#2A211E", slate: "#6B5D56", line: "#F0E3D6", grid: "#F3EADF", paper: "#FFFFFF", step: "#FFF6ED" },
+  dark:  { ink: "#F3E9E0", slate: "#B0A096", line: "#3A2D25", grid: "#3A2D25", paper: "#241C17", step: "#191410" },
 };
 
 const font = { fontFamily: "Inter, system-ui, sans-serif", display: "block" };

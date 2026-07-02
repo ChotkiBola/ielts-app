@@ -5,7 +5,7 @@ export const ETYPE = {
   cohesion:   { c: "#2F77C8", en: "Cohesion",   uz: "Bog'liqlik" },
 };
 
-const COL = { a: "#16203A", b: "#FF5A4D", c: "#E8A33D", d: "#2E9E6B" };
+const COL = { a: "#2A211E", b: "#FF5A4D", c: "#E8A33D", d: "#2E9E6B" };
 
 export const TASKS = {
   t2: {
