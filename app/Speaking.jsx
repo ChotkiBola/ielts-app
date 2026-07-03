@@ -138,8 +138,16 @@ RULES: never give feedback, scores or corrections during the test; keep your own
         if (sc.interrupted) { /* user talked over examiner */ }
       };
       ws.onerror = () => { setErr(t("Connection error. Check GEMINI_API_KEY / model and try again.", "Ulanish xatosi. GEMINI_API_KEY / modelni tekshirib, qayta urining.")); setStage("error"); cleanup(); };
-      ws.onclose = () => { setMicOn(false); setTalking(false); };
-    } catch (e) {
+      ws.onclose = (ev) => {
+        setMicOn(false); setTalking(false);
+        setStage((st) => {
+          if (st === "connecting" || st === "live") {
+            setErr(`${t("Connection closed", "Ulanish uzildi")}: ${ev.code}${ev.reason ? " — " + ev.reason : ""}`);
+            return "error";
+          }
+          return st;
+        });
+      };
       setErr(e.message || String(e)); setStage("error"); cleanup();
     }
   }
