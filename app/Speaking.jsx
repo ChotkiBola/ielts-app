@@ -118,12 +118,12 @@ export default function Speaking({ lang, accessCode, onNeedCode, onSave }) {
       const tokRes = await fetch("/api/speak-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: accessCode }) });
       const tok = await tokRes.json();
       if (tok.needPassword) { onNeedCode && onNeedCode(); setStage("idle"); return; }
-      if (!tok.token) throw new Error(tok.error || "Token failed");
+      if (!tok.key) throw new Error(tok.error || "Token failed");
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
       micStreamRef.current = stream;
 
-      const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?access_token=" + encodeURIComponent(tok.token);
+      const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(tok.key);
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
