@@ -11,262 +11,318 @@ const V = {
 };
 const GRAD = "linear-gradient(120deg,var(--accent),var(--accent2))";
 const serif = "'DM Serif Display', serif";
-const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease", ...extra });
-function bandColor(b) { if (b >= 7) return "var(--good)"; if (b >= 6) return "#7BAE4A"; if (b >= 5) return "var(--accent2)"; return "var(--bad)"; }
-
-function floatTo16(f32) {
-  const out = new Int16Array(f32.length);
-  for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i])); out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; }
-  return out;
+const btn = function (extra) {
+  extra = extra || {};
+  var base = { cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease" };
+  for (var k in extra) base[k] = extra[k];
+  return base;
+};
+function bandColor(b) {
+  if (b >= 7) return "var(--good)";
+  if (b >= 6) return "#7BAE4A";
+  if (b >= 5) return "var(--accent2)";
+  return "var(--bad)";
 }
-function b64FromBytes(bytes) { let bin = ""; const u8 = new Uint8Array(bytes); for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]); return btoa(bin); }
-function bytesFromB64(b64) { const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
 
-export default function Speaking({ lang, accessCode, onNeedCode, onSave }) {
-  const t = (en, uz) => (lang === "uz" ? uz : en);
-  const [stage, setStage] = useState("idle");
-  const [setIdx, setSetIdx] = useState(0);
-  const [err, setErr] = useState("");
-  const [lines, setLines] = useState([]);
-  const [talking, setTalking] = useState(false);
-  const [micOn, setMicOn] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [result, setResult] = useState(null);
+export default function Speaking(props) {
+  var lang = props.lang, accessCode = props.accessCode, onNeedCode = props.onNeedCode, onSave = props.onSave;
+  function t(en, uz) { return lang === "uz" ? uz : en; }
 
-  const wsRef = useRef(null);
-  const micCtxRef = useRef(null);
-  const micStreamRef = useRef(null);
-  const procRef = useRef(null);
-  const playCtxRef = useRef(null);
-  const playTimeRef = useRef(0);
-  const exBufRef = useRef("");
-  const meBufRef = useRef("");
-  const timerRef = useRef(null);
-  const linesRef = useRef([]);
+  var stageState = useState("idle");
+  var stage = stageState[0], setStage = stageState[1];
+  var setIdxState = useState(0);
+  var setIdx = setIdxState[0], setSetIdx = setIdxState[1];
+  var errState = useState("");
+  var err = errState[0], setErr = errState[1];
+  var linesState = useState([]);
+  var lines = linesState[0], setLines = linesState[1];
+  var talkingState = useState(false);
+  var talking = talkingState[0], setTalking = talkingState[1];
+  var elapsedState = useState(0);
+  var elapsed = elapsedState[0], setElapsed = elapsedState[1];
+  var resultState = useState(null);
+  var result = resultState[0], setResult = resultState[1];
 
-  useEffect(() => () => cleanup(), []);
-  useEffect(() => { linesRef.current = lines; }, [lines]);
+  var pcRef = useRef(null);
+  var dcRef = useRef(null);
+  var micStreamRef = useRef(null);
+  var audioElRef = useRef(null);
+  var timerRef = useRef(null);
+  var linesRef = useRef([]);
+  var itemTextRef = useRef({});
+
+  useEffect(function () {
+    return function () { cleanup(); };
+  }, []);
+  useEffect(function () { linesRef.current = lines; }, [lines]);
 
   function cleanup() {
-    try { if (procRef.current) procRef.current.disconnect(); } catch (e) {}
-    try { if (micStreamRef.current) micStreamRef.current.getTracks().forEach((tr) => tr.stop()); } catch (e) {}
-    try { if (micCtxRef.current) micCtxRef.current.close(); } catch (e) {}
-    try { if (playCtxRef.current) playCtxRef.current.close(); } catch (e) {}
-    try { if (wsRef.current) wsRef.current.close(); } catch (e) {}
-    if (timerRef.current) clearInterval(timerRef.current);
-    procRef.current = micCtxRef.current = micStreamRef.current = playCtxRef.current = wsRef.current = null;
-    setMicOn(false); setTalking(false);
+    try { if (timerRef.current) clearInterval(timerRef.current); } catch (e) {}
+    try { if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); } } catch (e) {}
+    try { if (dcRef.current) dcRef.current.close(); } catch (e) {}
+    try { if (pcRef.current) pcRef.current.close(); } catch (e) {}
+    timerRef.current = null;
+    micStreamRef.current = null;
+    dcRef.current = null;
+    pcRef.current = null;
+    setTalking(false);
   }
 
-  function pushLine(who, text) {
-    if (!text || !text.trim()) return;
-    setLines((L) => {
-      const last = L[L.length - 1];
-      if (last && last.who === who) { const c = [...L]; c[c.length - 1] = { who, text: last.text + text }; return c; }
-      return [...L, { who, text }];
-    });
-  }
-  function flushBufs() {
-    if (exBufRef.current.trim()) { pushLine("ex", exBufRef.current); exBufRef.current = ""; }
-    if (meBufRef.current.trim()) { pushLine("me", meBufRef.current); meBufRef.current = ""; }
+  function addLine(who, text) {
+    if (!text) return;
+    setLines(function (L) { return L.concat([{ who: who, text: text }]); });
   }
 
   function startTimer() {
-    timerRef.current = setInterval(() => setElapsed((x) => x + 1), 1000);
+    timerRef.current = setInterval(function () { setElapsed(function (x) { return x + 1; }); }, 1000);
   }
 
-  function startMic() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    micCtxRef.current = ctx;
-    const src = ctx.createMediaStreamSource(micStreamRef.current);
-    const proc = ctx.createScriptProcessor(4096, 1, 1);
-    procRef.current = proc;
-    proc.onaudioprocess = (e) => {
-      const ws = wsRef.current;
-      if (!ws || ws.readyState !== 1) return;
-      const pcm = floatTo16(e.inputBuffer.getChannelData(0));
-      ws.send(JSON.stringify({ realtimeInput: { audio: { data: b64FromBytes(pcm.buffer), mimeType: "audio/pcm;rate=16000" } } }));
-    };
-    src.connect(proc); proc.connect(ctx.destination);
-    setMicOn(true);
+  function buildInstructions() {
+    var s = SPEAKING[setIdx];
+    var p1 = s.p1.map(function (q, i) { return "(" + (i + 1) + ") " + q; }).join(" ");
+    var p3 = s.p3.map(function (q, i) { return "(" + (i + 1) + ") " + q; }).join(" ");
+    var parts = [];
+    parts.push("You are a friendly but professional IELTS Speaking examiner running a SHORTENED mock test (about 5-6 minutes total). Speak naturally and concisely, like a real examiner. Follow this exact plan, one question at a time, waiting for the candidate's answer before continuing.");
+    parts.push("PART 1 - greet the candidate briefly, then ask these questions one by one: " + p1);
+    parts.push("PART 2 - say: Now I am going to give you a topic. You have about thirty seconds to think, then please speak for up to one and a half minutes. The topic is: " + s.cue.topic + " You should say: " + s.cue.points.join("; ") + ". After they finish, ask one short follow-up question.");
+    parts.push("PART 3 - ask these discussion questions one by one: " + p3);
+    parts.push("Then say exactly: That is the end of the speaking test. Thank you. And stop talking after that.");
+    parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; if the candidate is silent for a while, gently prompt them once; always stay in English; begin now by greeting the candidate.");
+    return parts.join(" ");
   }
 
-  function queuePlay(b64) {
-    try {
-      if (!playCtxRef.current) { playCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 }); playTimeRef.current = playCtxRef.current.currentTime; }
-      const ctx = playCtxRef.current;
-      const bytes = bytesFromB64(b64);
-      const i16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-      const f32 = new Float32Array(i16.length);
-      for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
-      const buf = ctx.createBuffer(1, f32.length, 24000);
-      buf.getChannelData(0).set(f32);
-      const srcNode = ctx.createBufferSource();
-      srcNode.buffer = buf; srcNode.connect(ctx.destination);
-      const startAt = Math.max(ctx.currentTime, playTimeRef.current);
-      srcNode.start(startAt);
-      playTimeRef.current = startAt + buf.duration;
-      setTalking(true);
-      srcNode.onended = () => { if (playCtxRef.current && playTimeRef.current <= playCtxRef.current.currentTime + 0.05) setTalking(false); };
-    } catch (e) {}
-  }
+  function handleServerEvent(evt) {
+    var type = evt.type || "";
 
-  async function start() {
-    setErr(""); setLines([]); setResult(null); setElapsed(0);
-    setStage("connecting");
-    try {
-      const tokRes = await fetch("/api/speak-token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: accessCode }) });
-      const tok = await tokRes.json();
-      if (tok.needPassword) { onNeedCode && onNeedCode(); setStage("idle"); return; }
-      if (!tok.key) throw new Error(tok.error || "Token failed");
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-      micStreamRef.current = stream;
-
-      const url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=" + encodeURIComponent(tok.key);
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      const s = SPEAKING[setIdx];
-      const sys = "You are a friendly but professional IELTS Speaking examiner running a SHORTENED mock test (about 5-6 minutes total). Speak naturally and concisely, like a real examiner. Follow this exact plan, one question at a time, waiting for the candidate's answer before continuing:\n" +
-        "PART 1 — greet the candidate briefly, then ask these questions one by one: " + s.p1.map(function (q, i) { return "(" + (i + 1) + ") " + q; }).join(" ") + "\n" +
-        "PART 2 — say: \"Now I'm going to give you a topic. You have about 30 seconds to think, then please speak for up to one and a half minutes.\" The topic is: \"" + s.cue.topic + "\" You should say: " + s.cue.points.join("; ") + ". After they finish, ask one short follow-up question.\n" +
-        "PART 3 — ask these discussion questions one by one: " + s.p3.map(function (q, i) { return "(" + (i + 1) + ") " + q; }).join(" ") + "\n" +
-        "Then say exactly: \"That is the end of the speaking test. Thank you.\" and stop.\n" +
-        "RULES: never give feedback, scores or corrections during the test; keep your own turns short; if the candidate is silent for a long time, gently prompt them once; always stay in English.";
-
-      ws.onopen = function () {
-        ws.send(JSON.stringify({
-          setup: {
-            model: "models/" + tok.model,
-            generationConfig: { responseModalities: ["AUDIO"] },
-            systemInstruction: { parts: [{ text: sys }] },
-            outputAudioTranscription: {},
-            inputAudioTranscription: {},
-          },
-        }));
-      };
-
-      ws.onmessage = async function (ev) {
-        let msg;
-        try {
-          const txt = typeof ev.data === "string" ? ev.data : await ev.data.text();
-          msg = JSON.parse(txt);
-        } catch (e) { return; }
-
-        if (msg.setupComplete) {
-          setStage("live");
-          startMic();
-          startTimer();
-          ws.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [{ text: "Hello, I am ready to begin." }] }], turnComplete: true } }));
-          return;
-        }
-        const sc = msg.serverContent;
-        if (!sc) return;
-        if (sc.outputTranscription && sc.outputTranscription.text) exBufRef.current += sc.outputTranscription.text;
-        if (sc.inputTranscription && sc.inputTranscription.text) meBufRef.current += sc.inputTranscription.text;
-        if (sc.modelTurn && sc.modelTurn.parts) {
-          for (const p of sc.modelTurn.parts) {
-            if (p.inlineData && p.inlineData.data) queuePlay(p.inlineData.data);
-          }
-        }
-        if (sc.turnComplete) { flushBufs(); }
-      };
-
-      ws.onerror = function () {
-        setErr(t("Connection error. Check GEMINI_API_KEY / model and try again.", "Ulanish xatosi. GEMINI_API_KEY / modelni tekshirib, qayta urining."));
-        setStage("error");
-        cleanup();
-      };
-
-      ws.onclose = function (ev) {
-        setMicOn(false);
-        setTalking(false);
-        setStage(function (st) {
-          if (st === "connecting" || st === "live") {
-            setErr((t("Connection closed", "Ulanish uzildi")) + ": " + ev.code + (ev.reason ? " — " + ev.reason : ""));
-            return "error";
-          }
-          return st;
-        });
-      };
-    } catch (e) {
-      setErr(e.message || String(e));
-      setStage("error");
-      cleanup();
+    if (type === "conversation.item.input_audio_transcription.completed") {
+      var txt = evt.transcript || "";
+      if (txt.trim()) addLine("me", txt.trim());
+      return;
+    }
+    if (type === "response.audio_transcript.delta" || type === "response.output_audio_transcript.delta") {
+      var id = evt.response_id || evt.item_id || "cur";
+      itemTextRef.current[id] = (itemTextRef.current[id] || "") + (evt.delta || "");
+      return;
+    }
+    if (type === "response.audio_transcript.done" || type === "response.output_audio_transcript.done") {
+      var id2 = evt.response_id || evt.item_id || "cur";
+      var full = evt.transcript || itemTextRef.current[id2] || "";
+      if (full.trim()) addLine("ex", full.trim());
+      delete itemTextRef.current[id2];
+      return;
+    }
+    if (type === "input_audio_buffer.speech_started") { setTalking(false); return; }
+    if (type === "response.audio.delta" || type === "response.output_audio.delta") { setTalking(true); return; }
+    if (type === "response.done") { setTalking(false); return; }
+    if (type === "error") {
+      var msg = (evt.error && evt.error.message) || "Realtime error";
+      setErr(msg);
     }
   }
 
-  async function finish() {
-    flushBufs();
-    setStage("scoring");
-    cleanup();
-    const transcript = linesRef.current.map(function (l) { return (l.who === "ex" ? "Examiner" : "Candidate") + ": " + l.text.trim(); }).join("\n");
-    if (!transcript || transcript.length < 40) { setErr(t("Not enough speech was captured to score.", "Baholash uchun yetarli nutq yozilmadi.")); setStage("error"); return; }
-    try {
-      const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "speakScore", transcript: transcript, lang: lang, password: accessCode }) });
-      const r = await res.json();
-      if (r.needPassword) { onNeedCode && onNeedCode(); setStage("idle"); return; }
-      if (r.error) { setErr(r.error); setStage("error"); return; }
-      setResult(r); setStage("done");
-      if (onSave) onSave(r, transcript, SPEAKING[setIdx].name);
-    } catch (e) { setErr(t("Network error.", "Tarmoq xatosi.")); setStage("error"); }
+  function start() {
+    setErr(""); setLines([]); setResult(null); setElapsed(0);
+    itemTextRef.current = {};
+    setStage("connecting");
+
+    var instructions = buildInstructions();
+
+    fetch("/api/realtime-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: accessCode, instructions: instructions }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (sess) {
+        if (sess.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
+        if (!sess.ek) { throw new Error(sess.error || "Could not start session."); }
+
+        return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+          .then(function (stream) {
+            micStreamRef.current = stream;
+
+            var pc = new RTCPeerConnection();
+            pcRef.current = pc;
+
+            var audioEl = audioElRef.current;
+            pc.ontrack = function (event) {
+              if (audioEl) { audioEl.srcObject = event.streams[0]; audioEl.play().catch(function () {}); }
+            };
+
+            stream.getTracks().forEach(function (track) { pc.addTrack(track, stream); });
+
+            var dc = pc.createDataChannel("oai-events");
+            dcRef.current = dc;
+            dc.onopen = function () {
+              setStage("live");
+              startTimer();
+              dc.send(JSON.stringify({ type: "response.create" }));
+            };
+            dc.onmessage = function (e) {
+              try { handleServerEvent(JSON.parse(e.data)); } catch (err2) {}
+            };
+            dc.onerror = function () {
+              setErr(t("Data channel error.", "Ma'lumot kanali xatosi."));
+            };
+
+            return pc.createOffer().then(function (offer) {
+              return pc.setLocalDescription(offer).then(function () { return offer; });
+            });
+          })
+          .then(function (offer) {
+            var model = sess.model;
+            return fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model), {
+              method: "POST",
+              body: offer.sdp,
+              headers: {
+                "Authorization": "Bearer " + sess.ek,
+                "Content-Type": "application/sdp",
+              },
+            });
+          })
+          .then(function (sdpRes) {
+            if (!sdpRes.ok) {
+              return sdpRes.text().then(function (txt) { throw new Error("Realtime connection failed (" + sdpRes.status + "): " + txt.slice(0, 200)); });
+            }
+            return sdpRes.text();
+          })
+          .then(function (answerSdp) {
+            return pcRef.current.setRemoteDescription({ type: "answer", sdp: answerSdp });
+          });
+      })
+      .catch(function (e) {
+        setErr((e && e.message) || String(e));
+        setStage("error");
+        cleanup();
+      });
   }
 
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
+  function finish() {
+    setStage("scoring");
+    var transcript = linesRef.current
+      .map(function (l) { return (l.who === "ex" ? "Examiner" : "Candidate") + ": " + l.text; })
+      .join("\n");
+    cleanup();
+    if (!transcript || transcript.length < 40) {
+      setErr(t("Not enough speech was captured to score.", "Baholash uchun yetarli nutq yozilmadi."));
+      setStage("error");
+      return;
+    }
+    fetch("/api/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "speakScore", transcript: transcript, lang: lang, password: accessCode }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
+        if (r.error) { setErr(r.error); setStage("error"); return; }
+        setResult(r);
+        setStage("done");
+        if (onSave) onSave(r, transcript, SPEAKING[setIdx].name);
+      })
+      .catch(function () {
+        setErr(t("Network error.", "Tarmoq xatosi."));
+        setStage("error");
+      });
+  }
+
+  var mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  var ss = String(elapsed % 60).padStart(2, "0");
+
+  var audioTag = <audio ref={audioElRef} autoPlay style={{ display: "none" }} />;
 
   if (stage === "idle" || stage === "error") {
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
-        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>🎙 {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
-        <p style={{ textAlign: "center", color: V.muted, fontSize: 13.5, margin: "0 0 18px", lineHeight: 1.55 }}>{t("A live AI examiner will interview you (Parts 1–3, ~5-6 min). Speak out loud — then Claude scores your fluency, vocabulary and grammar.", "Jonli AI imtihonchi siz bilan suhbat o'tkazadi (Part 1–3, ~5-6 daqiqa). Ovoz bilan gapiring — so'ng Claude ravonlik, lug'at va grammatikani baholaydi.")}</p>
+        {audioTag}
+        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>{"\uD83C\uDF99"} {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
+        <p style={{ textAlign: "center", color: V.muted, fontSize: 13.5, margin: "0 0 18px", lineHeight: 1.55 }}>
+          {t("A live AI examiner will interview you (Parts 1-3, ~5-6 min). Speak out loud - then Claude scores your fluency, vocabulary and grammar.", "Jonli AI imtihonchi siz bilan suhbat o'tkazadi (Part 1-3, ~5-6 daqiqa). Ovoz bilan gapiring - so'ng Claude ravonlik, lug'at va grammatikani baholaydi.")}
+        </p>
         <div style={{ marginBottom: 14 }}>
-          {SPEAKING.map((s, i) => (
-            <button key={i} onClick={() => setSetIdx(i)} style={btn({ width: "100%", textAlign: "left", padding: "14px 17px", borderRadius: 14, marginBottom: 8, border: "1px solid " + (setIdx === i ? "var(--accent)" : V.border), background: setIdx === i ? V.accentSoft : V.surface, color: V.text, fontSize: 14 })}>{s.name}</button>
-          ))}
+          {SPEAKING.map(function (s, i) {
+            var isActive = setIdx === i;
+            return (
+              <button key={i} onClick={function () { setSetIdx(i); }} style={btn({ width: "100%", textAlign: "left", padding: "14px 17px", borderRadius: 14, marginBottom: 8, border: "1px solid " + (isActive ? "var(--accent)" : V.border), background: isActive ? V.accentSoft : V.surface, color: V.text, fontSize: 14 })}>
+                {s.name}
+              </button>
+            );
+          })}
         </div>
-        {err && <p style={{ color: V.bad, fontSize: 13, textAlign: "center", marginBottom: 10 }}>{err}</p>}
-        <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(255,106,77,0.35)" })}>🎤 {t("Start the interview →", "Suhbatni boshlash →")}</button>
-        <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>{t("Uses your microphone. Pronunciation is not scored from transcript (noted honestly in results).", "Mikrofoningiz ishlatiladi. Talaffuz transkriptdan baholanmaydi (natijada halol ko'rsatiladi).")}</p>
+        {err ? <p style={{ color: V.bad, fontSize: 13, textAlign: "center", marginBottom: 10 }}>{err}</p> : null}
+        <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(255,106,77,0.35)" })}>
+          {"\uD83C\uDFA4"} {t("Start the interview \u2192", "Suhbatni boshlash \u2192")}
+        </button>
+        <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
+          {t("Uses your microphone. Pronunciation is not scored from transcript (noted honestly in results).", "Mikrofoningiz ishlatiladi. Talaffuz transkriptdan baholanmaydi (natijada halol ko'rsatiladi).")}
+        </p>
       </div>
     );
   }
 
   if (stage === "connecting") {
-    return <div style={{ textAlign: "center", color: V.muted, padding: 50 }}>{t("Connecting to your examiner…", "Imtihonchiga ulanmoqda…")}</div>;
+    return (
+      <div style={{ textAlign: "center", color: V.muted, padding: 50 }}>
+        {audioTag}
+        {t("Connecting to your examiner...", "Imtihonchiga ulanmoqda...")}
+      </div>
+    );
   }
 
   if (stage === "live") {
     return (
       <div className="anim" style={{ maxWidth: 640, margin: "6px auto" }}>
+        {audioTag}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <span style={{ fontFamily: serif, fontSize: 20, color: V.text }}>{mm}:{ss}</span>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: talking ? V.accent : V.good }}>{talking ? "🔊 " + t("Examiner speaking…", "Imtihonchi gapiryapti…") : micOn ? "🎤 " + t("Your turn — speak", "Sizning navbatingiz — gapiring") : "…"}</span>
-          <button onClick={finish} style={btn({ background: V.text, color: V.bg, padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>{t("Finish & score →", "Tugatish va baholash →")}</button>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: talking ? V.accent : V.good }}>
+            {talking ? ("\uD83D\uDD0A " + t("Examiner speaking...", "Imtihonchi gapiryapti...")) : ("\uD83C\uDFA4 " + t("Your turn - speak", "Sizning navbatingiz - gapiring"))}
+          </span>
+          <button onClick={finish} style={btn({ background: V.text, color: V.bg, padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>
+            {t("Finish & score \u2192", "Tugatish va baholash \u2192")}
+          </button>
         </div>
         <div style={{ height: 6, background: V.track, borderRadius: 999, marginBottom: 14, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: talking ? "100%" : "0%", background: GRAD, transition: "width .4s", borderRadius: 999, opacity: .8 }} />
+          <div style={{ height: "100%", width: talking ? "100%" : "0%", background: GRAD, transition: "width .4s", borderRadius: 999, opacity: 0.8 }} />
         </div>
         <div className="sel" style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, minHeight: 300, maxHeight: 420, overflowY: "auto", boxShadow: V.shadow }}>
-          {lines.length === 0 && <p style={{ color: V.faint, fontSize: 13, textAlign: "center", marginTop: 90 }}>{t("The examiner will greet you in a moment — say hello back!", "Imtihonchi hozir salomlashadi — javob bering!")}</p>}
-          {lines.map((l, i) => (
-            <div key={i} style={{ marginBottom: 12, display: "flex", flexDirection: "column", alignItems: l.who === "me" ? "flex-end" : "flex-start" }}>
-              <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", color: l.who === "me" ? V.good : V.accent, marginBottom: 3 }}>{l.who === "me" ? t("You", "Siz") : t("Examiner", "Imtihonchi")}</span>
-              <p style={{ margin: 0, maxWidth: "85%", fontSize: 14, lineHeight: 1.55, color: V.text, background: l.who === "me" ? "rgba(47,185,138,0.10)" : V.surface2, padding: "9px 13px", borderRadius: 12 }}>{l.text.trim()}</p>
-            </div>
-          ))}
+          {lines.length === 0 ? (
+            <p style={{ color: V.faint, fontSize: 13, textAlign: "center", marginTop: 90 }}>
+              {t("The examiner will greet you in a moment - say hello back!", "Imtihonchi hozir salomlashadi - javob bering!")}
+            </p>
+          ) : null}
+          {lines.map(function (l, i) {
+            var mine = l.who === "me";
+            return (
+              <div key={i} style={{ marginBottom: 12, display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: mine ? V.good : V.accent, marginBottom: 3 }}>
+                  {mine ? t("You", "Siz") : t("Examiner", "Imtihonchi")}
+                </span>
+                <p style={{ margin: 0, maxWidth: "85%", fontSize: 14, lineHeight: 1.55, color: V.text, background: mine ? "rgba(47,185,138,0.10)" : V.surface2, padding: "9px 13px", borderRadius: 12 }}>
+                  {l.text}
+                </p>
+              </div>
+            );
+          })}
         </div>
-        <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>{t("When the examiner says the test is over, press \u201cFinish & score\u201d.", "Imtihonchi test tugadi deganida \u201cTugatish va baholash\u201dni bosing.")}</p>
+        <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
+          {t("When the examiner says the test is over, press Finish & score.", "Imtihonchi test tugadi deganida Tugatish va baholashni bosing.")}
+        </p>
       </div>
     );
   }
 
   if (stage === "scoring") {
-    return <div style={{ textAlign: "center", color: V.muted, padding: 50 }}>{t("The examiner is scoring your performance…", "Imtihonchi natijangizni baholayapti…")}</div>;
+    return (
+      <div style={{ textAlign: "center", color: V.muted, padding: 50 }}>
+        {t("The examiner is scoring your performance...", "Imtihonchi natijangizni baholayapti...")}
+      </div>
+    );
   }
 
   if (stage === "done" && result) {
+    var rows = [["FC", result.fc], ["LR", result.lr], ["GRA", result.gra]];
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
         <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 20, padding: 20, boxShadow: V.shadow, marginBottom: 12 }}>
@@ -276,12 +332,15 @@ export default function Speaking({ lang, accessCode, onNeedCode, onSave }) {
               <span style={{ fontSize: 8, color: V.muted, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>band</span>
             </div>
             <div style={{ display: "flex", flex: 1, minWidth: 200, gap: 6 }}>
-              {[["FC", result.fc], ["LR", result.lr], ["GRA", result.gra]].map(([lb, o]) => (
-                <div key={lb} style={{ textAlign: "center", flex: 1 }}>
-                  <div style={{ fontFamily: serif, fontSize: 20, color: bandColor(o.band) }}>{Number(o.band).toFixed(1)}</div>
-                  <div style={{ fontSize: 10, color: V.muted, fontWeight: 700 }}>{lb}</div>
-                </div>
-              ))}
+              {rows.map(function (pair) {
+                var lb = pair[0], o = pair[1];
+                return (
+                  <div key={lb} style={{ textAlign: "center", flex: 1 }}>
+                    <div style={{ fontFamily: serif, fontSize: 20, color: bandColor(o.band) }}>{Number(o.band).toFixed(1)}</div>
+                    <div style={{ fontSize: 10, color: V.muted, fontWeight: 700 }}>{lb}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -290,15 +349,21 @@ export default function Speaking({ lang, accessCode, onNeedCode, onSave }) {
             <div><b style={{ color: V.text }}>FC:</b> {result.fc.note}</div>
             <div><b style={{ color: V.text }}>LR:</b> {result.lr.note}</div>
             <div><b style={{ color: V.text }}>GRA:</b> {result.gra.note}</div>
-            {result.pron_note && <div style={{ marginTop: 6, fontStyle: "italic" }}>{result.pron_note}</div>}
+            {result.pron_note ? <div style={{ marginTop: 6, fontStyle: "italic" }}>{result.pron_note}</div> : null}
           </div>
-          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "14px 0 6px", color: V.good }}>✓ {t("What worked", "Yaxshi tomonlari")}</h4>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.strengths || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
-          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "12px 0 6px", color: V.accent }}>→ {t("To improve", "Yaxshilash kerak")}</h4>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{(result.improvements || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
+          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "14px 0 6px", color: V.good }}>{"\u2713"} {t("What worked", "Yaxshi tomonlari")}</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+            {(result.strengths || []).map(function (s, i) { return <li key={i}>{s}</li>; })}
+          </ul>
+          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "12px 0 6px", color: V.accent }}>{"\u2192"} {t("To improve", "Yaxshilash kerak")}</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+            {(result.improvements || []).map(function (s, i) { return <li key={i}>{s}</li>; })}
+          </ul>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => { setStage("idle"); setResult(null); setLines([]); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>↻ {t("New interview", "Yangi suhbat")}</button>
+          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
+            {"\u21BB"} {t("New interview", "Yangi suhbat")}
+          </button>
         </div>
       </div>
     );
