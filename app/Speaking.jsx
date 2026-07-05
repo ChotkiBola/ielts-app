@@ -216,8 +216,7 @@ export default function Speaking(props) {
             });
           })
           .then(function (offer) {
-            var model = sess.model;
-            return fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model), {
+            return fetch("https://api.openai.com/v1/realtime", {
               method: "POST",
               body: offer.sdp,
               headers: {
