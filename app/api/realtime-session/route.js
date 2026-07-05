@@ -32,10 +32,11 @@ export async function POST(request) {
       }),
     });
     const data = await res.json();
-    if (!res.ok || !data.client_secret || !data.client_secret.value) {
-      return Response.json({ error: (data.error && data.error.message) || "Could not create realtime session." }, { status: 502 });
+  const ekValue = data.value || (data.client_secret && data.client_secret.value);
+    if (!res.ok || !ekValue) {
+      return Response.json({ error: (data.error && data.error.message) || JSON.stringify(data).slice(0, 300) }, { status: 502 });
     }
-    return Response.json({ ek: data.client_secret.value, model: model });
+    return Response.json({ ek: ekValue, model: model });
   } catch (e) {
     return Response.json({ error: e.message || "Server error." }, { status: 500 });
   }
