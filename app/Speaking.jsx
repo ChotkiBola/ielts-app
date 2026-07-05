@@ -17,12 +17,6 @@ const btn = function (extra) {
   for (var k in extra) base[k] = extra[k];
   return base;
 };
-function bandColor(b) {
-  if (b >= 7) return "var(--good)";
-  if (b >= 6) return "#7BAE4A";
-  if (b >= 5) return "var(--accent2)";
-  return "var(--bad)";
-}
 function has(type, needle) { return type.indexOf(needle) !== -1; }
 
 export default function Speaking(props) {
@@ -43,6 +37,8 @@ export default function Speaking(props) {
   var elapsed = elapsedState[0], setElapsed = elapsedState[1];
   var resultState = useState(null);
   var result = resultState[0], setResult = resultState[1];
+  var showTranscriptState = useState(false);
+  var showTranscript = showTranscriptState[0], setShowTranscript = showTranscriptState[1];
 
   var pcRef = useRef(null);
   var dcRef = useRef(null);
@@ -53,11 +49,17 @@ export default function Speaking(props) {
   var outBufRef = useRef({});
   var seenItemsRef = useRef({});
   var talkingTimeoutRef = useRef(null);
+  var transcriptScrollRef = useRef(null);
 
   useEffect(function () {
     return function () { cleanup(); };
   }, []);
   useEffect(function () { linesRef.current = lines; }, [lines]);
+  useEffect(function () {
+    if (showTranscript && transcriptScrollRef.current) {
+      transcriptScrollRef.current.scrollTop = transcriptScrollRef.current.scrollHeight;
+    }
+  }, [lines, showTranscript]);
 
   function cleanup() {
     try { if (timerRef.current) clearInterval(timerRef.current); } catch (e) {}
@@ -102,7 +104,7 @@ export default function Speaking(props) {
     parts.push("PART 2 - say: Now I am going to give you a topic. You have about thirty seconds to think, then please speak for up to one and a half minutes. The topic is: " + s.cue.topic + " You should say: " + s.cue.points.join("; ") + ". After they finish, ask one short follow-up question.");
     parts.push("PART 3 - ask these discussion questions one by one: " + p3);
     parts.push("Then say exactly: That is the end of the speaking test. Thank you. And stop talking after that.");
-    parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; wait for the candidate to finish speaking before you respond, do not interrupt; if the candidate is silent for a while, gently prompt them once; always stay in English; begin now by greeting the candidate.");
+    parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; wait patiently - candidates pause to think, so never respond until they have clearly finished speaking, and never interrupt them mid-sentence or mid-thought; a few seconds of silence usually just means they are thinking, not that they are done; if the candidate is silent for a long while (several seconds of true silence, not a thinking pause), gently prompt them once; always stay in English; begin now by greeting the candidate.");
     return parts.join(" ");
   }
 
@@ -316,41 +318,94 @@ export default function Speaking(props) {
   }
 
   if (stage === "live") {
+    var turnColor = talking ? V.accent : V.good;
+    var turnLabel = talking ? t("Examiner speaking...", "Imtihonchi gapiryapti...") : t("Your turn - speak", "Sizning navbatingiz - gapiring");
+    var orbLabel = talking ? t("Listening to the examiner...", "Imtihonchini tinglang...") : t("I'm listening...", "Sizni tinglayapman...");
+    var orbSub = talking
+      ? t("The examiner is asking a question - just listen.", "Imtihonchi savol beryapti - shunchaki tinglang.")
+      : t("Speak naturally, like a real IELTS interview. I can hear you.", "Tabiiy gapiring, xuddi haqiqiy IELTS suhbatidagidek. Sizni eshityapman.");
+
+    var eqDurations = [1.1, 0.9, 1.3, 1.0, 1.2];
+    var eqBars = [1, 2, 3, 4, 5].map(function (n, i) {
+      return (
+        <div key={n} style={{
+          width: 4, height: "100%", borderRadius: 3, background: "#fff", opacity: 0.95,
+          transformOrigin: "center",
+          animation: "eqBar" + n + " " + eqDurations[i] + "s ease-in-out infinite",
+          animationPlayState: talking ? "running" : "paused",
+          transform: talking ? undefined : "scaleY(0.4)",
+        }} />
+      );
+    });
+
     return (
       <div className="anim" style={{ maxWidth: 640, margin: "6px auto" }}>
         {audioTag}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontFamily: serif, fontSize: 20, color: V.text }}>{mm}:{ss}</span>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: talking ? V.accent : V.good }}>
-            {talking ? ("\uD83D\uDD0A " + t("Examiner speaking...", "Imtihonchi gapiryapti...")) : ("\uD83C\uDFA4 " + t("Your turn - speak", "Sizning navbatingiz - gapiring"))}
-          </span>
-          <button onClick={finish} style={btn({ background: V.text, color: V.bg, padding: "9px 16px", borderRadius: 10, fontSize: 13 })}>
+
+        {/* status bar */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", background: V.surface, border: "1px solid " + V.border, borderRadius: 16, padding: "14px 18px", boxShadow: V.shadow, marginBottom: 26 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontFamily: serif, fontSize: 22, color: V.text, minWidth: 58 }}>{mm}:{ss}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 14, fontWeight: 700, color: turnColor }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: turnColor, animation: "pulseRing 1.6s ease-in-out infinite" }} />
+              {turnLabel}
+            </div>
+          </div>
+          <button onClick={finish} style={btn({ background: GRAD, color: "#fff", padding: "11px 20px", borderRadius: 12, fontSize: 14, boxShadow: "0 8px 20px var(--accent-soft)" })}>
             {t("Finish & score \u2192", "Tugatish va baholash \u2192")}
           </button>
         </div>
-        <div style={{ height: 6, background: V.track, borderRadius: 999, marginBottom: 14, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: talking ? "100%" : "0%", background: GRAD, transition: "width .4s", borderRadius: 999, opacity: 0.8 }} />
-        </div>
-        <div className="sel" style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, minHeight: 300, maxHeight: 420, overflowY: "auto", boxShadow: V.shadow }}>
-          {lines.length === 0 ? (
-            <p style={{ color: V.faint, fontSize: 13, textAlign: "center", marginTop: 90 }}>
-              {t("The examiner will greet you in a moment - say hello back!", "Imtihonchi hozir salomlashadi - javob bering!")}
-            </p>
-          ) : null}
-          {lines.map(function (l, i) {
-            var mine = l.who === "me";
-            return (
-              <div key={i} style={{ marginBottom: 12, display: "flex", flexDirection: "column", alignItems: mine ? "flex-end" : "flex-start" }}>
-                <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: mine ? V.good : V.accent, marginBottom: 3 }}>
-                  {mine ? t("You", "Siz") : t("Examiner", "Imtihonchi")}
-                </span>
-                <p style={{ margin: 0, maxWidth: "85%", fontSize: 14, lineHeight: 1.55, color: V.text, background: mine ? "rgba(47,185,138,0.10)" : V.surface2, padding: "9px 13px", borderRadius: 12 }}>
-                  {l.text}
-                </p>
+
+        {/* orb visualizer */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "36px 20px 30px" }}>
+          <div style={{ position: "relative", width: 168, height: 168, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: V.accentSoft, animation: "orbPulse 2.2s ease-out infinite" }} />
+            <div style={{ position: "absolute", inset: 16, borderRadius: "50%", background: V.accentSoft, animation: "orbPulse 2.2s ease-out 0.6s infinite" }} />
+            <div style={{ position: "relative", width: 112, height: 112, borderRadius: "50%", background: "linear-gradient(140deg,var(--accent),var(--accent2))", boxShadow: "0 18px 44px var(--accent-soft)", animation: "orbBreathe 2.4s ease-in-out infinite", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, height: 36 }}>
+                {eqBars}
               </div>
-            );
-          })}
+            </div>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: V.text, marginTop: 22 }}>{orbLabel}</div>
+          <div style={{ fontSize: 13.5, color: V.muted, marginTop: 4, textAlign: "center", maxWidth: 340 }}>{orbSub}</div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+            <button onClick={function () { setShowTranscript(!showTranscript); }} style={btn({ border: "1px solid " + V.border, background: V.surface, color: V.text, padding: "10px 18px", borderRadius: 11, fontSize: 13.5 })}>
+              {showTranscript ? t("Hide transcript", "Transkriptni yashirish") : t("Show transcript", "Transkriptni ko'rsatish")}
+            </button>
+          </div>
         </div>
+
+        {/* transcript (hidden by default) */}
+        {showTranscript ? (
+          <div className="anim" style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 20, boxShadow: V.shadow, marginBottom: 22 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: V.faint, marginBottom: 12 }}>
+              {t("Transcript", "Transkript")}
+            </div>
+            <div ref={transcriptScrollRef} style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 320, overflowY: "auto" }}>
+              {lines.length === 0 ? (
+                <p style={{ color: V.faint, fontSize: 13, textAlign: "center", margin: "20px 0" }}>
+                  {t("The examiner will greet you in a moment - say hello back!", "Imtihonchi hozir salomlashadi - javob bering!")}
+                </p>
+              ) : null}
+              {lines.map(function (l, i) {
+                var mine = l.who === "me";
+                return (
+                  <div key={i} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%" }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: mine ? V.good : V.accent, marginBottom: 4 }}>
+                      {mine ? t("You", "Siz") : t("Examiner", "Imtihonchi")}
+                    </div>
+                    <div style={{ fontSize: 14.5, lineHeight: 1.55, color: V.text, background: mine ? "rgba(47,185,138,0.10)" : V.surface2, padding: "11px 14px", borderRadius: 13 }}>
+                      {l.text}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
           {t("When the examiner says the test is over, press Finish & score.", "Imtihonchi test tugadi deganida Tugatish va baholashni bosing.")}
         </p>
@@ -367,46 +422,70 @@ export default function Speaking(props) {
   }
 
   if (stage === "done" && result) {
-    var rows = [["FC", result.fc], ["LR", result.lr], ["GRA", result.gra]];
+    var critRows = [
+      { label: t("Fluency & Coherence", "Ravonlik va izchillik"), band: result.fc.band },
+      { label: t("Lexical Resource", "Lug'at boyligi"), band: result.lr.band },
+      { label: t("Grammatical Range & Accuracy", "Grammatik diapazon va aniqlik"), band: result.gra.band },
+    ];
+    var strengthLines = (result.strengths || []).map(function (s) { return { mark: "\u2713", color: V.good, text: s }; });
+    var improveLines = (result.improvements || []).map(function (s) { return { mark: "\u2192", color: V.accent, text: s }; });
+    var noteLines = strengthLines.concat(improveLines);
+
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
-        <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 20, padding: 20, boxShadow: V.shadow, marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <div style={{ width: 70, height: 70, borderRadius: 18, background: V.accentSoft, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontFamily: serif, fontSize: 28, color: bandColor(result.overall), lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span>
-              <span style={{ fontSize: 8, color: V.muted, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>band</span>
+        <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 20, padding: 22, boxShadow: V.shadow, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+            <div style={{ width: 66, height: 66, borderRadius: 18, background: "linear-gradient(135deg,var(--accent),var(--accent2))", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: "0 10px 22px var(--accent-soft)", flexShrink: 0 }}>
+              <span style={{ fontFamily: serif, fontSize: 27, lineHeight: 1 }}>{Number(result.overall).toFixed(1)}</span>
+              <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.14em", marginTop: 2 }}>BAND</span>
             </div>
-            <div style={{ display: "flex", flex: 1, minWidth: 200, gap: 6 }}>
-              {rows.map(function (pair) {
-                var lb = pair[0], o = pair[1];
-                return (
-                  <div key={lb} style={{ textAlign: "center", flex: 1 }}>
-                    <div style={{ fontFamily: serif, fontSize: 20, color: bandColor(o.band) }}>{Number(o.band).toFixed(1)}</div>
-                    <div style={{ fontSize: 10, color: V.muted, fontWeight: 700 }}>{lb}</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: V.text }}>{t("Estimated speaking band", "Taxminiy speaking bali")}</div>
+              <div style={{ fontSize: 13, color: V.muted, marginTop: 2 }}>{t("Based on the 4 official IELTS speaking criteria", "Rasmiy IELTS speaking mezonlarining 4 tasi asosida")}</div>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 22px" }}>
+            {critRows.map(function (c, i) {
+              var pct = Math.max(0, Math.min(100, (c.band / 9) * 100)) + "%";
+              return (
+                <div key={i}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 700, color: V.muted, marginBottom: 5 }}>
+                    <span>{c.label}</span>
+                    <span style={{ color: V.accent }}>{Number(c.band).toFixed(1)}</span>
                   </div>
-                );
-              })}
+                  <div style={{ height: 7, borderRadius: 100, background: V.track, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: pct, borderRadius: 100, background: "linear-gradient(90deg,var(--accent),var(--accent2))" }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 700, color: V.muted, marginBottom: 5 }}>
+                <span>{t("Pronunciation", "Talaffuz")}</span>
+                <span style={{ color: V.faint, fontStyle: "italic", fontWeight: 600 }}>{t("not assessed", "baholanmagan")}</span>
+              </div>
+              <div style={{ height: 7, borderRadius: 100, background: "transparent", border: "1px dashed " + V.border, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: "0%" }} />
+              </div>
             </div>
           </div>
+          {result.pron_note ? <div style={{ fontSize: 12, color: V.faint, fontStyle: "italic", marginTop: 12 }}>{result.pron_note}</div> : null}
         </div>
-        <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, marginBottom: 12 }}>
-          <div style={{ fontSize: 12.5, color: V.muted, lineHeight: 1.6 }}>
-            <div><b style={{ color: V.text }}>FC:</b> {result.fc.note}</div>
-            <div><b style={{ color: V.text }}>LR:</b> {result.lr.note}</div>
-            <div><b style={{ color: V.text }}>GRA:</b> {result.gra.note}</div>
-            {result.pron_note ? <div style={{ marginTop: 6, fontStyle: "italic" }}>{result.pron_note}</div> : null}
-          </div>
-          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "14px 0 6px", color: V.good }}>{"\u2713"} {t("What worked", "Yaxshi tomonlari")}</h4>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
-            {(result.strengths || []).map(function (s, i) { return <li key={i}>{s}</li>; })}
-          </ul>
-          <h4 style={{ fontFamily: serif, fontSize: 15, margin: "12px 0 6px", color: V.accent }}>{"\u2192"} {t("To improve", "Yaxshilash kerak")}</h4>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
-            {(result.improvements || []).map(function (s, i) { return <li key={i}>{s}</li>; })}
-          </ul>
+
+        <div style={{ borderRadius: 13, background: V.surface2, border: "1px dashed var(--border)", padding: 16, marginBottom: 12 }}>
+          {noteLines.map(function (n, i) {
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, fontWeight: 600, color: n.color, marginTop: i === 0 ? 0 : 8 }}>
+                <span>{n.mark}</span>
+                <span style={{ color: V.text, fontWeight: 500 }}>{n.text}</span>
+              </div>
+            );
+          })}
         </div>
+
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
+          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
             {"\u21BB"} {t("New interview", "Yangi suhbat")}
           </button>
         </div>
