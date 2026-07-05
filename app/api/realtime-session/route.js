@@ -13,15 +13,22 @@ export async function POST(request) {
     const model = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview-2024-12-17";
     const instructions = body.instructions || "You are a helpful assistant.";
 
-    const res = await fetch("https://api.openai.com/v1/realtime/sessions", {
+    const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
       method: "POST",
       headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: model,
-        voice: "alloy",
-        instructions: instructions,
-        input_audio_transcription: { model: "whisper-1" },
-        turn_detection: { type: "server_vad" },
+        session: {
+          type: "realtime",
+          model: model,
+          instructions: instructions,
+          audio: {
+            input: {
+              transcription: { model: "whisper-1" },
+              turn_detection: { type: "server_vad" },
+            },
+            output: { voice: "alloy" },
+          },
+        },
       }),
     });
     const data = await res.json();
