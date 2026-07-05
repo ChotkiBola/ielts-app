@@ -23,6 +23,7 @@ function bandColor(b) {
   if (b >= 5) return "var(--accent2)";
   return "var(--bad)";
 }
+function has(type, needle) { return type.indexOf(needle) !== -1; }
 
 export default function Speaking(props) {
   var lang = props.lang, accessCode = props.accessCode, onNeedCode = props.onNeedCode, onSave = props.onSave;
@@ -49,7 +50,9 @@ export default function Speaking(props) {
   var audioElRef = useRef(null);
   var timerRef = useRef(null);
   var linesRef = useRef([]);
-  var itemTextRef = useRef({});
+  var outBufRef = useRef({});
+  var seenItemsRef = useRef({});
+  var talkingTimeoutRef = useRef(null);
 
   useEffect(function () {
     return function () { cleanup(); };
@@ -58,6 +61,7 @@ export default function Speaking(props) {
 
   function cleanup() {
     try { if (timerRef.current) clearInterval(timerRef.current); } catch (e) {}
+    try { if (talkingTimeoutRef.current) clearTimeout(talkingTimeoutRef.current); } catch (e) {}
     try { if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); } } catch (e) {}
     try { if (dcRef.current) dcRef.current.close(); } catch (e) {}
     try { if (pcRef.current) pcRef.current.close(); } catch (e) {}
@@ -68,9 +72,20 @@ export default function Speaking(props) {
     setTalking(false);
   }
 
-  function addLine(who, text) {
+  function addLine(who, text, key) {
+    text = (text || "").trim();
     if (!text) return;
+    if (key) {
+      if (seenItemsRef.current[key]) return;
+      seenItemsRef.current[key] = true;
+    }
     setLines(function (L) { return L.concat([{ who: who, text: text }]); });
+  }
+
+  function markTalking() {
+    setTalking(true);
+    if (talkingTimeoutRef.current) clearTimeout(talkingTimeoutRef.current);
+    talkingTimeoutRef.current = setTimeout(function () { setTalking(false); }, 900);
   }
 
   function startTimer() {
@@ -87,32 +102,59 @@ export default function Speaking(props) {
     parts.push("PART 2 - say: Now I am going to give you a topic. You have about thirty seconds to think, then please speak for up to one and a half minutes. The topic is: " + s.cue.topic + " You should say: " + s.cue.points.join("; ") + ". After they finish, ask one short follow-up question.");
     parts.push("PART 3 - ask these discussion questions one by one: " + p3);
     parts.push("Then say exactly: That is the end of the speaking test. Thank you. And stop talking after that.");
-    parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; if the candidate is silent for a while, gently prompt them once; always stay in English; begin now by greeting the candidate.");
+    parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; wait for the candidate to finish speaking before you respond, do not interrupt; if the candidate is silent for a while, gently prompt them once; always stay in English; begin now by greeting the candidate.");
     return parts.join(" ");
+  }
+
+  function extractTranscriptFromItem(item) {
+    if (!item || !item.content) return "";
+    var out = "";
+    for (var i = 0; i < item.content.length; i++) {
+      var c = item.content[i];
+      if (c && typeof c.transcript === "string") out += c.transcript;
+      if (c && typeof c.text === "string") out += c.text;
+    }
+    return out;
   }
 
   function handleServerEvent(evt) {
     var type = evt.type || "";
 
-    if (type === "conversation.item.input_audio_transcription.completed") {
-      var txt = evt.transcript || "";
-      if (txt.trim()) addLine("me", txt.trim());
+    // Candidate speech transcribed (various possible event name shapes)
+    if (has(type, "input_audio_transcription") && (has(type, "completed") || has(type, "done"))) {
+      addLine("me", evt.transcript, evt.item_id || ("in-" + Date.now()));
       return;
     }
-    if (type === "response.audio_transcript.delta" || type === "response.output_audio_transcript.delta") {
-      var id = evt.response_id || evt.item_id || "cur";
-      itemTextRef.current[id] = (itemTextRef.current[id] || "") + (evt.delta || "");
+
+    // Examiner speech transcript, streaming then final
+    if ((has(type, "audio_transcript") || has(type, "output_text")) && has(type, "delta") && !has(type, "input")) {
+      var idD = evt.response_id || evt.item_id || "cur";
+      outBufRef.current[idD] = (outBufRef.current[idD] || "") + (evt.delta || "");
+      markTalking();
       return;
     }
-    if (type === "response.audio_transcript.done" || type === "response.output_audio_transcript.done") {
-      var id2 = evt.response_id || evt.item_id || "cur";
-      var full = evt.transcript || itemTextRef.current[id2] || "";
-      if (full.trim()) addLine("ex", full.trim());
-      delete itemTextRef.current[id2];
+    if ((has(type, "audio_transcript") || has(type, "output_text")) && (has(type, "done") || has(type, "completed")) && !has(type, "input")) {
+      var idF = evt.response_id || evt.item_id || "cur";
+      var full = evt.transcript || outBufRef.current[idF] || "";
+      addLine("ex", full, idF + "-final");
+      delete outBufRef.current[idF];
       return;
     }
-    if (type === "input_audio_buffer.speech_started") { setTalking(false); return; }
-    if (type === "response.audio.delta" || type === "response.output_audio.delta") { setTalking(true); return; }
+
+    // Fallback: full conversation item finished - pull transcript out of its content array
+    if (type === "conversation.item.done" || type === "conversation.item.created") {
+      var item = evt.item;
+      if (item && item.role === "user") {
+        var txt = extractTranscriptFromItem(item);
+        if (txt) addLine("me", txt, item.id);
+      } else if (item && item.role === "assistant") {
+        var txt2 = extractTranscriptFromItem(item);
+        if (txt2) addLine("ex", txt2, item.id);
+      }
+      return;
+    }
+
+    if (has(type, "audio") && has(type, "delta")) { markTalking(); return; }
     if (type === "response.done") { setTalking(false); return; }
     if (type === "error") {
       var msg = (evt.error && evt.error.message) || "Realtime error";
@@ -122,7 +164,8 @@ export default function Speaking(props) {
 
   function start() {
     setErr(""); setLines([]); setResult(null); setElapsed(0);
-    itemTextRef.current = {};
+    outBufRef.current = {};
+    seenItemsRef.current = {};
     setStage("connecting");
 
     var instructions = buildInstructions();
@@ -137,7 +180,7 @@ export default function Speaking(props) {
         if (sess.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
         if (!sess.ek) { throw new Error(sess.error || "Could not start session."); }
 
-        return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+        return navigator.mediaDevices.getUserMedia({ audio: true })
           .then(function (stream) {
             micStreamRef.current = stream;
 
@@ -146,7 +189,10 @@ export default function Speaking(props) {
 
             var audioEl = audioElRef.current;
             pc.ontrack = function (event) {
-              if (audioEl) { audioEl.srcObject = event.streams[0]; audioEl.play().catch(function () {}); }
+              if (audioEl) {
+                audioEl.srcObject = event.streams[0];
+                audioEl.play().catch(function () {});
+              }
             };
 
             stream.getTracks().forEach(function (track) { pc.addTrack(track, stream); });
@@ -170,7 +216,8 @@ export default function Speaking(props) {
             });
           })
           .then(function (offer) {
-            return fetch("https://api.openai.com/v1/realtime/calls", {
+            var model = sess.model;
+            return fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(model), {
               method: "POST",
               body: offer.sdp,
               headers: {
@@ -229,7 +276,7 @@ export default function Speaking(props) {
   var mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
   var ss = String(elapsed % 60).padStart(2, "0");
 
-  var audioTag = <audio ref={audioElRef} autoPlay style={{ display: "none" }} />;
+  var audioTag = <audio ref={audioElRef} autoPlay playsInline style={{ display: "none" }} />;
 
   if (stage === "idle" || stage === "error") {
     return (
