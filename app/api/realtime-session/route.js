@@ -1,5 +1,8 @@
 export const runtime = "nodejs";
 
+// Hardcoded (not relying on Vercel env var, which was not taking effect).
+const REALTIME_MODEL = "gpt-realtime-mini";
+
 export async function POST(request) {
   try {
     const body = await request.json().catch(function () { return {}; });
@@ -10,7 +13,7 @@ export async function POST(request) {
     const key = process.env.OPENAI_API_KEY;
     if (!key) return Response.json({ error: "OPENAI_API_KEY is not configured on the server." }, { status: 500 });
 
-    const model = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview-2024-12-17";
+    const model = REALTIME_MODEL;
     const instructions = body.instructions || "You are a helpful assistant.";
 
     const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
@@ -32,7 +35,7 @@ export async function POST(request) {
       }),
     });
     const data = await res.json();
-  const ekValue = data.value || (data.client_secret && data.client_secret.value);
+    const ekValue = data.value || (data.client_secret && data.client_secret.value);
     if (!res.ok || !ekValue) {
       return Response.json({ error: (data.error && data.error.message) || JSON.stringify(data).slice(0, 300) }, { status: 502 });
     }
