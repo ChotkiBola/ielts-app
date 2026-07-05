@@ -216,7 +216,7 @@ export default function Speaking(props) {
             });
           })
           .then(function (offer) {
-            return fetch("https://api.openai.com/v1/realtime", {
+            return fetch("https://api.openai.com/v1/realtime/calls", {
               method: "POST",
               body: offer.sdp,
               headers: {
