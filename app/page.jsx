@@ -29,9 +29,36 @@ function bandColor(b) { if (b >= 7) return "var(--good)"; if (b >= 6) return "#7
 function fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
 const etype = (t) => ETYPE[t] || ETYPE.grammar;
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease", ...extra });
-const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra, audioUrl: r.audio_url });
+const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra, audioUrl: r.audio_url, errors: r.errors || [] });
 const rowToVocabItem = (r) => ({ id: r.id, word: r.word, date: r.created_at });
 function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function extractSentence(full, needle) {
+  if (!full || !needle) return needle || "";
+  const idx = full.indexOf(needle);
+  if (idx < 0) return needle;
+  let start = idx;
+  while (start > 0 && ".!?\n".indexOf(full[start - 1]) === -1) start--;
+  let end = idx + needle.length;
+  while (end < full.length && ".!?\n".indexOf(full[end]) === -1) end++;
+  let sent = full.slice(start, end + (full[end] && ".!?".indexOf(full[end]) !== -1 ? 1 : 0)).trim();
+  sent = sent.replace(/^Candidate:\s*/i, "").replace(/^Examiner:\s*/i, "");
+  return sent || needle;
+}
+
+function buildWeaknessProfile(history) {
+  const counts = {};
+  const flat = [];
+  history.forEach((h) => {
+    (h.errors || []).forEach((e) => {
+      if (!e || !e.text) return;
+      counts[e.type] = (counts[e.type] || 0) + 1;
+      flat.push({ type: e.type, rule: e.rule, fix: e.fix, sentence: extractSentence(h.essay, e.text) });
+    });
+  });
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return { counts, top, flat };
+}
 
 function NavIcon({ name }) {
   const common = { width: 21, height: 21, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
@@ -157,6 +184,13 @@ export default function Home() {
   const [histTab, setHistTab] = useState("writing");
   const [profEdit, setProfEdit] = useState(false);
   const [profForm, setProfForm] = useState({ full_name: "", phone: "", level: "", target: "" });
+  const [profMode, setProfMode] = useState(null);
+  const [gapDeck, setGapDeck] = useState([]);
+  const [gapIdx, setGapIdx] = useState(0);
+  const [gapAnswer, setGapAnswer] = useState("");
+  const [gapChecking, setGapChecking] = useState(false);
+  const [gapResult, setGapResult] = useState(null);
+  const [gapGoodCount, setGapGoodCount] = useState(0);
   const restored = useRef(false);
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
@@ -224,9 +258,9 @@ export default function Home() {
   }
 
   async function saveAttempt(parsed) {
-    const item = { id: Date.now(), date: new Date().toISOString(), taskType, taskLabel: task.label.en, qType: q.type, qText: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band };
+    const item = { id: Date.now(), date: new Date().toISOString(), taskType, taskLabel: task.label.en, qType: q.type, qText: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band, errors: parsed.errors || [] };
     if (hasSupabase && session) {
-      const row = { user_id: session.user.id, task_type: taskType, task_label: task.label.en, q_type: q.type, q_text: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band };
+      const row = { user_id: session.user.id, task_type: taskType, task_label: task.label.en, q_type: q.type, q_text: q.text, essay, words, overall: parsed.overall, tr: parsed.tr.band, cc: parsed.cc.band, lr: parsed.lr.band, gra: parsed.gra.band, errors: parsed.errors || [] };
       const { data, error } = await supabase.from("history").insert(row).select().single();
       if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
       else setHistory((h) => [item, ...h].slice(0, 50));
@@ -351,6 +385,30 @@ export default function Home() {
     }
     return { totalEssays: writingHist.length, avgBand, bestBand, speakingCount: speakingHist.length, streak };
   }, [history]);
+
+  const weakness = useMemo(() => buildWeaknessProfile(history), [history]);
+
+  function startGapZali() {
+    const pool = shuffle(weakness.flat.filter((x) => x.sentence && x.sentence.length > 5)).slice(0, 5);
+    if (pool.length === 0) return;
+    setGapDeck(pool); setGapIdx(0); setGapAnswer(""); setGapResult(null); setGapGoodCount(0);
+    setProfMode("gap-run");
+  }
+  async function submitGap() {
+    if (!gapAnswer.trim()) return;
+    setGapChecking(true); setGapResult(null);
+    try {
+      const r = await api({ mode: "gapCheck", original: gapDeck[gapIdx].sentence, rewrite: gapAnswer.trim(), targetBand });
+      if (r.needPassword) { setShowGate(true); setGapChecking(false); return; }
+      setGapResult(r);
+      if (r.good) setGapGoodCount((c) => c + 1);
+    } catch (e) { setGapResult({ feedback: t("Network error.", "Tarmoq xatosi."), good: false, idealRewrite: "" }); }
+    finally { setGapChecking(false); }
+  }
+  function nextGap() {
+    if (gapIdx + 1 >= gapDeck.length) { setProfMode("gap-done"); return; }
+    setGapIdx((i) => i + 1); setGapAnswer(""); setGapResult(null);
+  }
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
   const firstLabel = task.first[lang];
@@ -656,9 +714,9 @@ export default function Home() {
         {tab === "speaking" && (
           <Speaking lang={lang} accessCode={accessCode} onNeedCode={() => setShowGate(true)}
             onSave={async (r, transcript, setName, recUrl) => {
-              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audioUrl: recUrl || null };
+              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audioUrl: recUrl || null, errors: r.errors || [] };
               if (hasSupabase && session) {
-                const row = { user_id: session.user.id, task_type: "spk", task_label: "Speaking", q_type: setName, q_text: "Speaking mock (Parts 1-3)", essay: transcript, words: item.words, overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audio_url: recUrl || null };
+                const row = { user_id: session.user.id, task_type: "spk", task_label: "Speaking", q_type: setName, q_text: "Speaking mock (Parts 1-3)", essay: transcript, words: item.words, overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audio_url: recUrl || null, errors: r.errors || [] };
                 const { data, error } = await supabase.from("history").insert(row).select().single();
                 if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
                 else setHistory((h) => [item, ...h].slice(0, 50));
@@ -713,7 +771,7 @@ export default function Home() {
         })()}
 
         {/* ============ PROFILE ============ */}
-        {tab === "profile" && (
+        {tab === "profile" && !profMode && (
           <div className="anim" style={{ maxWidth: 560, margin: "0 auto" }}>
             <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 20, padding: 22, boxShadow: V.shadow, marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -772,6 +830,31 @@ export default function Home() {
               </div>
             </div>
 
+            {weakness.top.length > 0 && (
+              <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: "18px 20px", marginBottom: 16, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.09em", textTransform: "uppercase", color: V.muted, marginBottom: 4 }}>🧬 {t("Weakness DNA", "Xato DNK")}</div>
+                <p style={{ fontSize: 12.5, color: V.muted, margin: "0 0 14px" }}>{t("Your most repeated mistake types, from all essays and speaking sessions.", "Barcha essay va speaking sessiyalaringizdagi eng ko'p takrorlangan xato turlari.")}</p>
+                {weakness.top.map((pair, i) => {
+                  const type = pair[0], count = pair[1];
+                  const max = weakness.top[0][1];
+                  const info = etype(type);
+                  const pct = Math.max(12, Math.round((count / max) * 100));
+                  return (
+                    <div key={i} style={{ marginBottom: i === weakness.top.length - 1 ? 0 : 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, fontWeight: 700, color: V.text, marginBottom: 4 }}>
+                        <span>{info[lang]}</span>
+                        <span style={{ color: info.c }}>×{count}</span>
+                      </div>
+                      <div style={{ height: 7, borderRadius: 100, background: V.track, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: pct + "%", borderRadius: 100, background: info.c }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                <button onClick={startGapZali} style={btn({ width: "100%", marginTop: 16, background: GRAD, color: "#fff", padding: "12px", borderRadius: 11, fontSize: 13.5, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>{t("Practise these weaknesses →", "Zaif tomonlar bo'yicha mashq qilish →")}</button>
+              </div>
+            )}
+
             <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 16, padding: "18px 20px", marginBottom: 16, textAlign: "center" }}>
               <div style={{ fontSize: 22, marginBottom: 6 }}>📁</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: V.text }}>{t("My questions", "Mening savollarim")}</div>
@@ -784,6 +867,56 @@ export default function Home() {
             {hasSupabase && session && (
               <button onClick={logout} style={btn({ width: "100%", background: "transparent", color: V.bad, padding: "12px", borderRadius: 12, fontSize: 13.5, border: `1px solid ${V.border}` })}>{t("Log out", "Chiqish")}</button>
             )}
+          </div>
+        )}
+
+        {/* ============ GAP ZALI (Sentence Gym) ============ */}
+        {tab === "profile" && profMode === "gap-run" && gapDeck[gapIdx] && (
+          <div className="anim" style={{ maxWidth: 520, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <button onClick={() => setProfMode(null)} style={btn({ background: "transparent", color: V.muted, fontSize: 13 })}>✕ {t("Quit", "Chiqish")}</button>
+              <span style={{ fontSize: 13, color: V.muted, fontWeight: 700 }}>{gapIdx + 1} / {gapDeck.length}</span>
+              <span style={{ fontSize: 13, color: V.good, fontWeight: 700 }}>✓ {gapGoodCount}</span>
+            </div>
+            <div style={{ background: V.promptBg, color: V.promptText, borderRadius: 18, padding: 20, marginBottom: 14, boxShadow: V.shadow }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,.55)", marginBottom: 8 }}>
+                {etype(gapDeck[gapIdx].type)[lang]} {t("issue", "muammosi")}
+              </div>
+              <p style={{ fontSize: 15.5, lineHeight: 1.6, margin: 0, fontStyle: "italic" }}>"{gapDeck[gapIdx].sentence}"</p>
+              {gapDeck[gapIdx].rule && <p style={{ fontSize: 12.5, opacity: .7, margin: "10px 0 0" }}>💡 {gapDeck[gapIdx].rule}</p>}
+            </div>
+            <p style={{ fontSize: 13, color: V.muted, margin: "0 0 8px" }}>{t(`Rewrite this at band ${Number(targetBand).toFixed(1)}:`, `Buni band ${Number(targetBand).toFixed(1)} darajasida qayta yozing:`)}</p>
+            <textarea value={gapAnswer} onChange={(e) => setGapAnswer(e.target.value)} disabled={!!gapResult} placeholder={t("Type your improved version…", "Yaxshilangan variantingizni yozing…")} style={{ width: "100%", minHeight: 90, padding: "13px 15px", border: `1px solid ${V.border}`, borderRadius: 14, fontSize: 14.5, lineHeight: 1.6, color: V.text, outline: "none", resize: "vertical", background: V.surface }} />
+
+            {!gapResult ? (
+              <button onClick={submitGap} disabled={gapChecking || !gapAnswer.trim()} style={btn({ width: "100%", marginTop: 12, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, opacity: gapChecking ? .8 : 1, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>{gapChecking ? t("Checking…", "Tekshirilmoqda…") : t("Check my rewrite →", "Tekshirish →")}</button>
+            ) : (
+              <div className="anim" style={{ marginTop: 14 }}>
+                <div style={{ background: gapResult.good ? "rgba(47,185,138,0.10)" : "rgba(255,106,77,0.10)", border: `1px solid ${gapResult.good ? "var(--good)" : "var(--accent)"}`, borderRadius: 14, padding: 15, marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: gapResult.good ? V.good : V.accent, marginBottom: 4 }}>{gapResult.good ? "✓ " + t("Nice improvement!", "Yaxshi yaxshilanish!") : "→ " + t("Getting there", "Deyarli tayyor")}</div>
+                  <p style={{ fontSize: 13.5, color: V.text, margin: 0, lineHeight: 1.55 }}>{gapResult.feedback}</p>
+                </div>
+                {gapResult.idealRewrite && (
+                  <div style={{ background: V.surface2, borderRadius: 12, padding: 13, marginBottom: 14 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: .5, color: V.muted, marginBottom: 4 }}>{t("Model rewrite", "Namuna variant")}</div>
+                    <p style={{ fontSize: 13.5, color: V.text, margin: 0, lineHeight: 1.5 }}>{gapResult.idealRewrite}</p>
+                  </div>
+                )}
+                <button onClick={nextGap} style={btn({ width: "100%", padding: "13px", borderRadius: 12, background: V.text, color: V.bg, fontSize: 14 })}>{gapIdx + 1 >= gapDeck.length ? t("Finish →", "Tugatish →") : t("Next →", "Keyingisi →")}</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "profile" && profMode === "gap-done" && (
+          <div className="anim" style={{ maxWidth: 460, margin: "30px auto", textAlign: "center" }}>
+            <div style={{ fontSize: 46, marginBottom: 8 }}>{gapGoodCount === gapDeck.length ? "🏆" : gapGoodCount >= gapDeck.length * 0.6 ? "🎉" : "💪"}</div>
+            <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, margin: "0 0 6px" }}>{t("Gap Gym complete!", "Gap zali tugadi!")}</h3>
+            <p style={{ fontSize: 16, color: V.muted, margin: "0 0 22px" }}>{t(`${gapGoodCount} of ${gapDeck.length} rewrites were a real improvement`, `${gapDeck.length} tadan ${gapGoodCount} tasi haqiqiy yaxshilanish bo'ldi`)}</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => setProfMode(null)} style={btn({ padding: "13px 23px", borderRadius: 11, background: V.surface, border: `1px solid ${V.border}`, color: V.muted, fontSize: 14 })}>{t("Done", "Tayyor")}</button>
+              <button onClick={startGapZali} style={btn({ padding: "13px 23px", borderRadius: 11, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>↻ {t("Practise again", "Yana mashq")}</button>
+            </div>
           </div>
         )}
 

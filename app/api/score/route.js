@@ -144,6 +144,17 @@ export async function POST(request) {
       return Response.json(parsed);
     }
 
+    if (mode === "gapCheck") {
+      const original = body.original, rewrite = body.rewrite;
+      if (!original || !rewrite) return Response.json({ error: "Missing original or rewrite." }, { status: 400 });
+      if (!hasKey) return Response.json({ good: true, feedback: "(demo) Add an API key for real feedback.", idealRewrite: original });
+      const tb = Number(body.targetBand) || 7.5;
+      const system = `You are an IELTS writing coach. The candidate is practising rewriting one flawed sentence from their own past work at approximately band ${tb}. Compare their ORIGINAL flawed sentence with their REWRITE. Judge honestly whether the rewrite is a genuine improvement (better grammar, vocabulary or clarity), not just different. Respond with MINIFIED JSON ONLY: {"good":true or false,"feedback":"one or two concise, encouraging but honest sentences on what improved or still needs work","idealRewrite":"a strong band ${tb} example rewrite of the ORIGINAL sentence"}. Write "feedback" in ${language}; "idealRewrite" always in English.`;
+      const clean = await callClaude(system, `ORIGINAL: ${original}\n\nREWRITE: ${rewrite}`, 500);
+      try { return Response.json(extractJson(clean)); }
+      catch { return Response.json({ error: "Could not parse feedback. Try again." }, { status: 502 }); }
+    }
+
     // SCORE
     if (!essay || typeof essay !== "string") return Response.json({ error: "No essay provided." }, { status: 400 });
     let parsed;
