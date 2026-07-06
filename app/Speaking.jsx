@@ -157,7 +157,7 @@ export default function Speaking(props) {
         var sess = resp && resp.data && resp.data.session;
         if (!sess || !sess.user) { callback(null); return; }
         var uid = sess.user.id;
-        var path = "speaking-audio/" + uid + "/" + Date.now() + ".webm";
+        var path = uid + "/" + Date.now() + ".webm";
         supabase.storage.from("speaking-audio").upload(path, blob, { contentType: "audio/webm", upsert: false })
           .then(function (res) {
             if (res.error) { throw new Error(res.error.message || "upload-failed"); }
