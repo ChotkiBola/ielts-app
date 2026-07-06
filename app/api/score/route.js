@@ -17,6 +17,23 @@ function rateLimited(ip) {
   return e.count > max;
 }
 
+// Robustly pull the JSON object out of a model response even if there is
+// stray text around it, by matching the first { to its balanced closing }.
+function extractJson(text) {
+  const start = text.indexOf("{");
+  if (start === -1) throw new Error("No JSON object found in response.");
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return JSON.parse(text.slice(start, i + 1));
+    }
+  }
+  // Depth never closed - response was truncated mid-object.
+  throw new Error("JSON object was truncated (likely hit the token limit).");
+}
+
 function mockScore(essay, words, lang) {
   const uz = lang === "uz";
   let base = 5.5;
@@ -115,10 +132,13 @@ export async function POST(request) {
       const transcript = body.transcript;
       if (!transcript) return Response.json({ error: "No transcript." }, { status: 400 });
       if (!hasKey) return Response.json({ fc: { band: 6, note: "(demo)" }, lr: { band: 6, note: "(demo)" }, gra: { band: 6, note: "(demo)" }, errors: [], overall: 6, strengths: ["(demo)"], improvements: ["(demo)"], pron_note: "(demo) Add an API key for real scoring." });
-      const system = `You are a certified IELTS Speaking examiner. You are given the transcript of a shortened mock IELTS Speaking test (Parts 1-3). Lines starting with "Examiner:" are the examiner; lines starting with "Candidate:" are the candidate. Score ONLY the candidate using official IELTS Speaking band descriptors for: Fluency and Coherence (fc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. Pronunciation cannot be assessed from a transcript, so do NOT score it; instead write one honest sentence in "pron_note" explaining it was not assessed. Also identify up to 6 specific language errors from the candidate's speech: each "text" must be an exact substring from a Candidate line, "fix" is the corrected English version, "type" is one of grammar|vocabulary|cohesion, and "rule" is a brief explanation. Respond with MINIFIED JSON ONLY: {"fc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"errors":[{"text":"exact phrase from candidate","fix":"corrected version","type":"grammar|vocabulary|cohesion","rule":"brief rule explanation"}],"strengths":["S","S"],"improvements":["S","S","S"],"pron_note":"S"}. Each note one concise sentence. Write all text (notes, strengths, improvements, pron_note, rule) in ${language}; "fix" always in English.`;
-      const clean = await callClaude(system, `Transcript:\n${transcript}`, 1600);
+      const system = `You are a certified IELTS Speaking examiner. You are given the transcript of a shortened mock IELTS Speaking test (Parts 1-3). Lines starting with "Examiner:" are the examiner; lines starting with "Candidate:" are the candidate. Score ONLY the candidate using official IELTS Speaking band descriptors for: Fluency and Coherence (fc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. Pronunciation cannot be assessed from a transcript, so do NOT score it; instead write one short honest sentence in "pron_note" explaining it was not assessed. Also identify up to 5 specific language errors from the candidate's speech: each "text" must be an exact substring from a Candidate line, "fix" is the corrected English version, "type" is one of grammar|vocabulary|cohesion, and "rule" is a VERY BRIEF explanation (max 12 words). Keep every note, strength and improvement to ONE short sentence - be concise everywhere, this must fit in a limited response. Respond with MINIFIED JSON ONLY, no markdown fences, exactly this shape: {"fc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"errors":[{"text":"exact phrase from candidate","fix":"corrected version","type":"grammar|vocabulary|cohesion","rule":"brief rule"}],"strengths":["S","S"],"improvements":["S","S"],"pron_note":"S"}. Write all text (notes, strengths, improvements, pron_note, rule) in ${language}; "fix" always in English.`;
+      const clean = await callClaude(system, `Transcript:\n${transcript}`, 2200);
       let parsed;
-      try { parsed = JSON.parse(clean); } catch { return Response.json({ error: "Could not parse examiner output. Try again." }, { status: 502 }); }
+      try { parsed = extractJson(clean); }
+      catch (parseErr) {
+        return Response.json({ error: "Could not parse examiner output. Please try again.", debug: (process.env.NODE_ENV !== "production" ? clean.slice(0, 400) : undefined) }, { status: 502 });
+      }
       const bs = [parsed?.fc?.band, parsed?.lr?.band, parsed?.gra?.band].filter((x) => typeof x === "number");
       if (bs.length === 3) parsed.overall = Math.round((bs.reduce((a, b) => a + b, 0) / 3) * 2) / 2;
       return Response.json(parsed);
@@ -136,7 +156,7 @@ export async function POST(request) {
       const system = `You are a certified IELTS Writing examiner. Score the candidate's ${tm.name} using the official band descriptors for the four criteria: ${tm.first} (tr), Coherence and Cohesion (cc), Lexical Resource (lr), Grammatical Range and Accuracy (gra). Bands 0-9 in 0.5 steps; be realistically strict. If under ${tm.min} words, penalise ${tm.first}.${t1note}${tgtNote} Respond with MINIFIED JSON ONLY (no markdown/fences), exactly: {"tr":{"band":N,"note":"S"},"cc":{"band":N,"note":"S"},"lr":{"band":N,"note":"S"},"gra":{"band":N,"note":"S"},"strengths":["S","S"],"improvements":["S","S","S"],"errors":[{"text":"EXACT phrase from the answer","fix":"correction","type":"grammar|vocabulary|spelling|cohesion","rule":"the short grammar or usage rule that explains the fix, so the learner understands WHY"}],"synonyms":[{"word":"an overused or basic word from the answer","alts":["better1","better2","better3"]}],"paragraphs":[{"label":"a 2-4 word tag for the paragraph e.g. Introduction / Body 1 / Conclusion","note":"one concise sentence of feedback on that paragraph"}],"toTarget":"${tgt ? "see instructions" : ""}"}. The "tr" key holds the ${tm.first} score. Up to 6 errors; each "text" MUST be an exact substring of the answer. Up to 3 synonyms entries. Provide one "paragraphs" entry per paragraph the candidate actually wrote (in order). Each "note" is one concise sentence. Write note/strengths/improvements/rule/paragraphs notes/toTarget in ${language}; "fix" and "alts" always in English.`;
       const userMsg = `${prompt}\n\nCandidate answer (${words || ""} words):\n${essay}`;
       const clean = await callClaude(system, userMsg, 2100);
-      try { parsed = JSON.parse(clean); }
+      try { parsed = extractJson(clean); }
       catch { return Response.json({ error: "Could not parse examiner output. Please try again." }, { status: 502 }); }
     }
     const bands = [parsed?.tr?.band, parsed?.cc?.band, parsed?.lr?.band, parsed?.gra?.band].filter((x) => typeof x === "number");

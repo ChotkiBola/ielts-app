@@ -364,7 +364,19 @@ export default function Speaking(props) {
           });
       })
       .catch(function (e) {
-        setErr((e && e.message) || String(e));
+        var msg = (e && e.message) || String(e);
+        var name = e && e.name;
+        if (name === "NotAllowedError" || name === "PermissionDeniedError" || has(msg, "Permission denied") || has(msg, "denied")) {
+          msg = t(
+            "Microphone access is blocked. On Windows: Settings -> Privacy & security -> Microphone -> turn on \"Let apps access your microphone\" and allow your browser. Also check the lock/site-settings icon next to the address bar and allow the microphone there. Then reload and try again.",
+            "Mikrofonga ruxsat berilmagan. Windows'da: Sozlamalar -> Maxfiylik va xavfsizlik -> Mikrofon -> \"Ilovalarga mikrofondan foydalanishga ruxsat berish\"ni yoqing va brauzeringizga ruxsat bering. Manzil qatori yonidagi qulf/sayt sozlamalari belgisidan ham mikrofonga ruxsat bering. Keyin sahifani yangilab qayta urinib ko'ring."
+          );
+        } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+          msg = t("No microphone was found on this device. Please connect a microphone and try again.", "Bu qurilmada mikrofon topilmadi. Mikrofon ulab, qayta urinib ko'ring.");
+        } else if (name === "NotReadableError" || name === "TrackStartError") {
+          msg = t("Your microphone is being used by another app (e.g. Zoom, Teams). Close it and try again.", "Mikrofoningiz boshqa dastur tomonidan band (masalan, Zoom, Teams). Uni yopib, qayta urinib ko'ring.");
+        }
+        setErr(msg);
         setStage("error");
         cleanup();
       });
@@ -428,7 +440,7 @@ export default function Speaking(props) {
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
         {audioTag}
-        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>{"🎙"} {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
+        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>{"\uD83C\uDF99"} {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
         <p style={{ textAlign: "center", color: V.muted, fontSize: 13.5, margin: "0 0 18px", lineHeight: 1.55 }}>
           {t("A live AI examiner will interview you (Parts 1-3, ~5-6 min). Speak out loud - then Claude scores your fluency, vocabulary and grammar.", "Jonli AI imtihonchi siz bilan suhbat o'tkazadi (Part 1-3, ~5-6 daqiqa). Ovoz bilan gapiring - so'ng Claude ravonlik, lug'at va grammatikani baholaydi.")}
         </p>
@@ -444,7 +456,7 @@ export default function Speaking(props) {
         </div>
         {err ? <p style={{ color: V.bad, fontSize: 13, textAlign: "center", marginBottom: 10 }}>{err}</p> : null}
         <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(255,106,77,0.35)" })}>
-          {"🎤"} {t("Start the interview →", "Suhbatni boshlash →")}
+          {"\uD83C\uDFA4"} {t("Start the interview \u2192", "Suhbatni boshlash \u2192")}
         </button>
         <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
           {t("Uses your microphone. Pronunciation is not scored from transcript (noted honestly in results).", "Mikrofoningiz ishlatiladi. Talaffuz transkriptdan baholanmaydi (natijada halol ko'rsatiladi).")}
@@ -498,7 +510,7 @@ export default function Speaking(props) {
           <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, width: 292, background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, boxShadow: "0 20px 50px rgba(42,33,30,0.22)", animation: "cardIn .3s ease both" }}>
             {prepSecs === 0 ? (
               <div style={{ textAlign: "center", padding: "14px 0" }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>{"🎤"}</div>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>{"\uD83C\uDFA4"}</div>
                 <div style={{ fontFamily: serif, fontSize: 17, color: V.accent, fontWeight: 700 }}>
                   {t("Start speaking now!", "Endi gapiring!")}
                 </div>
@@ -506,7 +518,7 @@ export default function Speaking(props) {
             ) : (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: V.faint, marginBottom: 10 }}>
-                  {t("Part 2 — Prepare", "Part 2 — Tayyorlanish")}
+                  {t("Part 2 \u2014 Prepare", "Part 2 \u2014 Tayyorlanish")}
                 </div>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   <svg viewBox="0 0 80 80" width="80" height="80" style={{ flexShrink: 0 }}>
@@ -555,7 +567,7 @@ export default function Speaking(props) {
             </div>
           </div>
           <button onClick={finish} style={btn({ background: GRAD, color: "#fff", padding: "11px 20px", borderRadius: 12, fontSize: 14, boxShadow: "0 8px 20px var(--accent-soft)" })}>
-            {t("Finish & score →", "Tugatish va baholash →")}
+            {t("Finish & score \u2192", "Tugatish va baholash \u2192")}
           </button>
         </div>
 
@@ -630,8 +642,8 @@ export default function Speaking(props) {
       { label: t("Lexical Resource", "Lug'at boyligi"), band: result.lr.band, note: result.lr.note },
       { label: t("Grammatical Range & Accuracy", "Grammatik diapazon va aniqlik"), band: result.gra.band, note: result.gra.note },
     ];
-    var strengthLines = (result.strengths || []).map(function (s) { return { mark: "✓", color: V.good, text: s }; });
-    var improveLines = (result.improvements || []).map(function (s) { return { mark: "→", color: V.accent, text: s }; });
+    var strengthLines = (result.strengths || []).map(function (s) { return { mark: "\u2713", color: V.good, text: s }; });
+    var improveLines = (result.improvements || []).map(function (s) { return { mark: "\u2192", color: V.accent, text: s }; });
     var noteLines = strengthLines.concat(improveLines);
     var errors = result.errors || [];
 
@@ -701,12 +713,12 @@ export default function Speaking(props) {
                   <div key={ei} style={{ borderLeft: "3px solid var(--bad)", paddingLeft: 12 }}>
                     <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>
                       <span style={{ textDecoration: "line-through", color: V.bad }}>{er.text}</span>
-                      <span style={{ color: V.muted, margin: "0 6px" }}>{"→"}</span>
+                      <span style={{ color: V.muted, margin: "0 6px" }}>{"\u2192"}</span>
                       <span style={{ color: V.good, fontWeight: 700 }}>{er.fix}</span>
                     </div>
                     {er.rule ? (
                       <div style={{ fontSize: 12, color: V.muted, marginTop: 4 }}>
-                        {"💡"} {er.rule}
+                        {"\uD83D\uDCA1"} {er.rule}
                       </div>
                     ) : null}
                   </div>
@@ -728,7 +740,7 @@ export default function Speaking(props) {
 
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); setAudioUrl(null); setPrepActive(false); setPrepSecs(60); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
-            {"↻"} {t("New interview", "Yangi suhbat")}
+            {"\u21BB"} {t("New interview", "Yangi suhbat")}
           </button>
         </div>
       </div>
