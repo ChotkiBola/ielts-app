@@ -21,6 +21,8 @@ const GRAD = "linear-gradient(120deg,var(--accent),var(--accent2))";
 const serif = "'DM Serif Display', serif";
 
 const DRAFT_KEY = "ielts:draft", VOCAB_KEY = "ielts:myvocab", THEME_KEY = "ielts:theme", HIST_KEY = "ielts:history", TARGET_KEY = "ielts:target";
+const PROFILE_LEVELS = ["Beginner", "4.5 – 5.0", "5.5 – 6.0", "6.5 – 7.0", "7.5+", "Not sure"];
+const PROFILE_TARGETS = [5.5, 6, 6.5, 7, 7.5, 8];
 
 function countWords(s) { const t = s.trim(); return t ? t.split(/\s+/).length : 0; }
 function bandColor(b) { if (b >= 7) return "var(--good)"; if (b >= 6) return "#7BAE4A"; if (b >= 5) return "var(--accent2)"; return "var(--bad)"; }
@@ -30,6 +32,16 @@ const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 70
 const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra, audioUrl: r.audio_url });
 const rowToVocabItem = (r) => ({ id: r.id, word: r.word, date: r.created_at });
 function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function NavIcon({ name }) {
+  const common = { width: 21, height: 21, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" };
+  if (name === "write") return (<svg {...common}><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>);
+  if (name === "speaking") return (<svg {...common}><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" /><path d="M19 11a7 7 0 0 1-14 0" /><path d="M12 18v3" /></svg>);
+  if (name === "vocab") return (<svg {...common}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" /><path d="M4 5.5v15" /></svg>);
+  if (name === "history") return (<svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>);
+  if (name === "profile") return (<svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" /></svg>);
+  return null;
+}
 
 function buildSegments(essay, errors) {
   const used = [];
@@ -76,7 +88,7 @@ function ExplainCard({ data, lang }) {
       {data.meaning && <div style={{ color: V.text, marginTop: 2 }}>{data.meaning}</div>}
       {data.usage && <div style={{ marginTop: 4 }}><b style={{ color: V.text }}>{L("Usage", "Ishlatilishi")}:</b> {data.usage}</div>}
       {(data.synonyms || []).length > 0 && <div style={{ marginTop: 4 }}>{L("Synonyms", "Sinonimlar")}: {data.synonyms.join(", ")}</div>}
-      {(data.examples || []).map((ex, i) => <div key={i} style={{ fontStyle: "italic", color: V.good, marginTop: 4 }}>“{ex}”</div>)}
+      {(data.examples || []).map((ex, i) => <div key={i} style={{ fontStyle: "italic", color: V.good, marginTop: 4 }}>"{ex}"</div>)}
     </div>
   );
 }
@@ -143,6 +155,8 @@ export default function Home() {
   const [profile, setProfile] = useState(null);
   const [adminUsers, setAdminUsers] = useState(null);
   const [histTab, setHistTab] = useState("writing");
+  const [profEdit, setProfEdit] = useState(false);
+  const [profForm, setProfForm] = useState({ full_name: "", phone: "", level: "", target: "" });
   const restored = useRef(false);
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
@@ -296,14 +310,47 @@ export default function Home() {
   }, [pMode, pIdx]);
 
   const isAdmin = !!(profile && profile.is_admin);
-  const TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")]];
+  const TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")], ["profile", t("Profile", "Profil")]];
   if (isAdmin) TABS.push(["admin", "Admin"]);
+  const BOTTOM_TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")], ["profile", t("Profile", "Profil")]];
   async function loadAdmin() {
     if (!isAdmin || !supabase) return;
     const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
     setAdminUsers(data || []);
   }
   useEffect(() => { if (tab === "admin" && isAdmin && adminUsers === null) loadAdmin(); }, [tab, isAdmin]);
+
+  function startProfEdit() {
+    setProfForm({
+      full_name: (profile && profile.full_name) || "",
+      phone: (profile && profile.phone) || "",
+      level: (profile && profile.level) || "",
+      target: profile && profile.target != null ? String(profile.target) : "",
+    });
+    setProfEdit(true);
+  }
+  async function saveProfile() {
+    if (!hasSupabase || !session) { setProfEdit(false); return; }
+    const updates = { full_name: profForm.full_name.trim(), phone: profForm.phone.trim(), level: profForm.level || null, target: profForm.target ? Number(profForm.target) : null };
+    const { data, error } = await supabase.from("profiles").update(updates).eq("user_id", session.user.id).select().single();
+    if (!error && data) setProfile(data);
+    setProfEdit(false);
+  }
+
+  const profStats = useMemo(() => {
+    const writingHist = history.filter((h) => h.taskType !== "spk");
+    const speakingHist = history.filter((h) => h.taskType === "spk");
+    const avgBand = writingHist.length ? writingHist.reduce((a, h) => a + (h.overall || 0), 0) / writingHist.length : null;
+    const bestBand = history.length ? Math.max(...history.map((h) => h.overall || 0)) : null;
+    let streak = 0;
+    if (history.length) {
+      const daySet = new Set(history.map((h) => new Date(h.date).toDateString()));
+      let checkDate = new Date();
+      if (!daySet.has(checkDate.toDateString())) checkDate.setDate(checkDate.getDate() - 1);
+      while (daySet.has(checkDate.toDateString())) { streak++; checkDate.setDate(checkDate.getDate() - 1); }
+    }
+    return { totalEssays: writingHist.length, avgBand, bestBand, speakingCount: speakingHist.length, streak };
+  }, [history]);
 
   const segments = useMemo(() => (result ? buildSegments(result.scoredEssay, result.errors) : []), [result]);
   const firstLabel = task.first[lang];
@@ -344,7 +391,7 @@ export default function Home() {
             <span className="brand" style={{ fontFamily: serif, fontSize: 21, color: V.text }}>IELTS Writing Coach</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
-            <nav style={{ display: "flex", gap: 20 }}>
+            <nav className="top-tabs" style={{ display: "flex", gap: 20 }}>
               {TABS.map(([k, l]) => (
                 <button key={k} onClick={() => setTab(k)} style={btn({ background: "transparent", padding: "6px 2px", fontSize: 14.5, color: tab === k ? V.accent : V.muted, borderBottom: `2px solid ${tab === k ? "var(--accent)" : "transparent"}`, borderRadius: 0 })}>{l}</button>
               ))}
@@ -601,7 +648,7 @@ export default function Home() {
               </div>
             )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>{Object.keys(VOCAB).map((topic) => (<button key={topic} onClick={() => { setVocabTopic(topic); setFlipped(-1); }} style={chip(vocabTopic === topic)}>{topic}</button>))}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>{VOCAB[vocabTopic].map((v, i) => (<div key={i} className="anim" onClick={() => setFlipped(flipped === i ? -1 : i)} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 16, padding: 19, cursor: "pointer", minHeight: 122, animationDelay: `${i * 40}ms`, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontFamily: serif, fontSize: 18, color: V.text }}>{v.word}</div><div style={{ fontSize: 12.5, color: V.muted, marginTop: 4 }}>{v.meaning}</div>{flipped === i ? <div style={{ fontSize: 13.5, color: V.good, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>“{v.ex}”</div> : <div style={{ fontSize: 11, color: V.accent, marginTop: 12, fontWeight: 700 }}>{t("Tap for example", "Misol uchun bosing")}</div>}</div>))}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>{VOCAB[vocabTopic].map((v, i) => (<div key={i} className="anim" onClick={() => setFlipped(flipped === i ? -1 : i)} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 16, padding: 19, cursor: "pointer", minHeight: 122, animationDelay: `${i * 40}ms`, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontFamily: serif, fontSize: 18, color: V.text }}>{v.word}</div><div style={{ fontSize: 12.5, color: V.muted, marginTop: 4 }}>{v.meaning}</div>{flipped === i ? <div style={{ fontSize: 13.5, color: V.good, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>"{v.ex}"</div> : <div style={{ fontSize: 11, color: V.accent, marginTop: 12, fontWeight: 700 }}>{t("Tap for example", "Misol uchun bosing")}</div>}</div>))}</div>
           </div>
         )}
 
@@ -665,6 +712,81 @@ export default function Home() {
           );
         })()}
 
+        {/* ============ PROFILE ============ */}
+        {tab === "profile" && (
+          <div className="anim" style={{ maxWidth: 560, margin: "0 auto" }}>
+            <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 20, padding: 22, boxShadow: V.shadow, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ width: 60, height: 60, borderRadius: "50%", background: GRAD, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: serif, fontSize: 24, flexShrink: 0 }}>
+                  {((profile && profile.full_name) || (session && session.user && session.user.email) || "?").trim().charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontWeight: 800, fontSize: 17, color: V.text }}>{(profile && profile.full_name) || t("(no name)", "(ismsiz)")}</div>
+                  <div style={{ fontSize: 13, color: V.muted, marginTop: 2 }}>{session && session.user && session.user.email}</div>
+                  <span style={{ display: "inline-block", marginTop: 8, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", padding: "3px 10px", borderRadius: 999, background: V.surface2, color: V.muted }}>{t("Free plan", "Bepul reja")}</span>
+                </div>
+                {!profEdit && <button onClick={startProfEdit} style={btn({ background: V.surface2, border: `1px solid ${V.border}`, color: V.text, padding: "9px 15px", borderRadius: 10, fontSize: 13 })}>{t("Edit", "Tahrir")}</button>}
+              </div>
+
+              {profEdit && (
+                <div className="anim" style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${V.border2}`, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <input value={profForm.full_name} onChange={(e) => setProfForm((f) => ({ ...f, full_name: e.target.value }))} placeholder={t("Full name", "To'liq ism")} style={{ padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 10, fontSize: 14, background: V.surface, color: V.text, outline: "none" }} />
+                  <input value={profForm.phone} onChange={(e) => setProfForm((f) => ({ ...f, phone: e.target.value }))} placeholder={t("Phone", "Telefon")} style={{ padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 10, fontSize: 14, background: V.surface, color: V.text, outline: "none" }} />
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <select value={profForm.level} onChange={(e) => setProfForm((f) => ({ ...f, level: e.target.value }))} style={{ flex: 1, minWidth: 140, padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 10, fontSize: 14, background: V.surface, color: V.text }}>
+                      <option value="">{t("Current level", "Hozirgi daraja")}</option>
+                      {PROFILE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                    <select value={profForm.target} onChange={(e) => setProfForm((f) => ({ ...f, target: e.target.value }))} style={{ flex: 1, minWidth: 140, padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 10, fontSize: 14, background: V.surface, color: V.text }}>
+                      <option value="">{t("Target band", "Maqsad band")}</option>
+                      {PROFILE_TARGETS.map((b) => <option key={b} value={b}>{b.toFixed(1)}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                    <button onClick={() => setProfEdit(false)} style={btn({ flex: 1, background: V.surface, border: `1px solid ${V.border}`, color: V.muted, padding: "11px", borderRadius: 10, fontSize: 13.5 })}>{t("Cancel", "Bekor")}</button>
+                    <button onClick={saveProfile} style={btn({ flex: 1, background: GRAD, color: "#fff", padding: "11px", borderRadius: 10, fontSize: 13.5, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>{t("Save", "Saqlash")}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[
+                [t("Total essays", "Jami essay"), profStats.totalEssays],
+                [t("Average band", "O'rtacha band"), profStats.avgBand != null ? profStats.avgBand.toFixed(1) : "—"],
+                [t("Best band", "Eng yaxshi band"), profStats.bestBand != null ? profStats.bestBand.toFixed(1) : "—"],
+                [t("Speaking sessions", "Speaking soni"), profStats.speakingCount],
+              ].map((row, i) => (
+                <div key={i} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 16, padding: "16px 14px", textAlign: "center", boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
+                  <div style={{ fontFamily: serif, fontSize: 24, color: V.text }}>{row[1]}</div>
+                  <div style={{ fontSize: 11.5, color: V.muted, marginTop: 4, fontWeight: 700 }}>{row[0]}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: V.promptBg, color: V.promptText, borderRadius: 18, padding: "18px 20px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, boxShadow: V.shadow }}>
+              <div style={{ fontSize: 30 }}>🔥</div>
+              <div>
+                <div style={{ fontFamily: serif, fontSize: 22 }}>{profStats.streak} {t("day streak", "kunlik ketma-ketlik")}</div>
+                <div style={{ fontSize: 12.5, opacity: 0.75, marginTop: 2 }}>{t("Keep practising daily to grow it.", "Ketma-ketlikni oshirish uchun har kuni mashq qiling.")}</div>
+              </div>
+            </div>
+
+            <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 16, padding: "18px 20px", marginBottom: 16, textAlign: "center" }}>
+              <div style={{ fontSize: 22, marginBottom: 6 }}>📁</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: V.text }}>{t("My questions", "Mening savollarim")}</div>
+              <div style={{ fontSize: 12.5, color: V.muted, marginTop: 4 }}>{t("Coming soon: upload your own exam questions.", "Tez orada: o'zingizning savollaringizni yuklang.")}</div>
+            </div>
+
+            {isAdmin && (
+              <button onClick={() => setTab("admin")} style={btn({ width: "100%", marginBottom: 12, background: V.surface, border: `1px solid ${V.border}`, color: V.text, padding: "13px", borderRadius: 12, fontSize: 13.5 })}>👥 {t("Open admin panel", "Admin panelni ochish")}</button>
+            )}
+            {hasSupabase && session && (
+              <button onClick={logout} style={btn({ width: "100%", background: "transparent", color: V.bad, padding: "12px", borderRadius: 12, fontSize: 13.5, border: `1px solid ${V.border}` })}>{t("Log out", "Chiqish")}</button>
+            )}
+          </div>
+        )}
+
         {/* ============ ADMIN ============ */}
         {tab === "admin" && isAdmin && (
           <div className="anim">
@@ -698,6 +820,16 @@ export default function Home() {
 
         <p style={{ textAlign: "center", color: V.faint, fontSize: 11, marginTop: 30 }}>{hasSupabase && session ? t("Signed in. Your history is saved to your account.", "Kirdingiz. Tarixingiz hisobingizga saqlanadi.") : t("Scores are AI estimates.", "Baholar AI taxminiy.")}</p>
       </div>
+
+      {/* ===== BOTTOM NAVIGATION (mobile) ===== */}
+      <nav className="bottom-nav">
+        {BOTTOM_TABS.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={"bn-btn" + (tab === k ? " active" : "")}>
+            <NavIcon name={k} />
+            <span>{l}</span>
+          </button>
+        ))}
+      </nav>
     </main>
   );
 }
