@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { SPEAKING } from "./data";
+import { supabase, hasSupabase } from "./lib/supabase";
 
 const V = {
   surface: "var(--surface)", surface2: "var(--surface-2)", text: "var(--text)", muted: "var(--muted)",
@@ -39,6 +40,12 @@ export default function Speaking(props) {
   var result = resultState[0], setResult = resultState[1];
   var showTranscriptState = useState(false);
   var showTranscript = showTranscriptState[0], setShowTranscript = showTranscriptState[1];
+  var prepActiveState = useState(false);
+  var prepActive = prepActiveState[0], setPrepActive = prepActiveState[1];
+  var prepSecsState = useState(60);
+  var prepSecs = prepSecsState[0], setPrepSecs = prepSecsState[1];
+  var audioUrlState = useState(null);
+  var audioUrl = audioUrlState[0], setAudioUrl = audioUrlState[1];
 
   var pcRef = useRef(null);
   var dcRef = useRef(null);
@@ -50,6 +57,11 @@ export default function Speaking(props) {
   var seenItemsRef = useRef({});
   var talkingTimeoutRef = useRef(null);
   var transcriptScrollRef = useRef(null);
+  var prepTimerRef = useRef(null);
+  var audioCtxRef = useRef(null);
+  var mediaRecRef = useRef(null);
+  var audioChunksRef = useRef([]);
+  var destNodeRef = useRef(null);
 
   useEffect(function () {
     return function () { cleanup(); };
@@ -63,15 +75,22 @@ export default function Speaking(props) {
 
   function cleanup() {
     try { if (timerRef.current) clearInterval(timerRef.current); } catch (e) {}
+    try { if (prepTimerRef.current) clearInterval(prepTimerRef.current); } catch (e) {}
     try { if (talkingTimeoutRef.current) clearTimeout(talkingTimeoutRef.current); } catch (e) {}
     try { if (micStreamRef.current) { micStreamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); } } catch (e) {}
     try { if (dcRef.current) dcRef.current.close(); } catch (e) {}
     try { if (pcRef.current) pcRef.current.close(); } catch (e) {}
+    try { if (audioCtxRef.current) audioCtxRef.current.close(); } catch (e) {}
     timerRef.current = null;
+    prepTimerRef.current = null;
     micStreamRef.current = null;
     dcRef.current = null;
     pcRef.current = null;
+    audioCtxRef.current = null;
+    destNodeRef.current = null;
+    mediaRecRef.current = null;
     setTalking(false);
+    setPrepActive(false);
   }
 
   function addLine(who, text, key) {
@@ -94,6 +113,68 @@ export default function Speaking(props) {
     timerRef.current = setInterval(function () { setElapsed(function (x) { return x + 1; }); }, 1000);
   }
 
+  function playDing() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      var ac = new AC();
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.4, ac.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.9);
+      osc.start(ac.currentTime);
+      osc.stop(ac.currentTime + 0.9);
+      osc.onended = function () { try { ac.close(); } catch (e) {} };
+    } catch (e) {}
+  }
+
+  function startPrepTimer() {
+    if (prepTimerRef.current) return;
+    setPrepActive(true);
+    setPrepSecs(60);
+    prepTimerRef.current = setInterval(function () {
+      setPrepSecs(function (s) {
+        if (s <= 1) {
+          clearInterval(prepTimerRef.current);
+          prepTimerRef.current = null;
+          playDing();
+          setTimeout(function () { setPrepActive(false); setPrepSecs(60); }, 2000);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  }
+
+  function uploadAudio(blob, callback) {
+    if (!blob || !hasSupabase || !supabase) { callback(null); return; }
+    try {
+      supabase.auth.getSession().then(function (resp) {
+        var sess = resp && resp.data && resp.data.session;
+        if (!sess || !sess.user) { callback(null); return; }
+        var uid = sess.user.id;
+        var path = "speaking-audio/" + uid + "/" + Date.now() + ".webm";
+        supabase.storage.from("speaking-audio").upload(path, blob, { contentType: "audio/webm", upsert: false })
+          .then(function (res) {
+            if (res.error) { throw new Error(res.error.message || "upload-failed"); }
+            return supabase.storage.from("speaking-audio").createSignedUrl(path, 86400);
+          })
+          .then(function (signRes) {
+            if (!signRes || signRes.error || !signRes.data) { throw new Error("sign-failed"); }
+            callback(signRes.data.signedUrl);
+          })
+          .catch(function (e) { console.warn("Audio upload error:", e.message || e); callback(null); });
+      }).catch(function (e) { console.warn("getSession error:", e); callback(null); });
+    } catch (e) {
+      console.warn("uploadAudio error:", e);
+      callback(null);
+    }
+  }
+
   function buildInstructions() {
     var s = SPEAKING[setIdx];
     var p1 = s.p1.map(function (q, i) { return "(" + (i + 1) + ") " + q; }).join(" ");
@@ -101,7 +182,7 @@ export default function Speaking(props) {
     var parts = [];
     parts.push("You are a friendly but professional IELTS Speaking examiner running a SHORTENED mock test (about 5-6 minutes total). Speak naturally and concisely, like a real examiner. Follow this exact plan, one question at a time, waiting for the candidate's answer before continuing.");
     parts.push("PART 1 - greet the candidate briefly, then ask these questions one by one: " + p1);
-    parts.push("PART 2 - say: Now I am going to give you a topic. You have about thirty seconds to think, then please speak for up to one and a half minutes. The topic is: " + s.cue.topic + " You should say: " + s.cue.points.join("; ") + ". After they finish, ask one short follow-up question.");
+    parts.push("PART 2 - say: Now I am going to give you a topic. The topic is: " + s.cue.topic + " You should say: " + s.cue.points.join("; ") + ". Then you MUST say this sentence word for word exactly: \"You now have one minute to prepare your answer.\" Then stay completely silent until the candidate starts speaking or the minute ends. After they finish, ask one short follow-up question.");
     parts.push("PART 3 - ask these discussion questions one by one: " + p3);
     parts.push("Then say exactly: That is the end of the speaking test. Thank you. And stop talking after that.");
     parts.push("RULES: never give feedback, scores or corrections during the test; keep your own turns short; wait patiently - candidates pause to think, so never respond until they have clearly finished speaking, and never interrupt them mid-sentence or mid-thought; a few seconds of silence usually just means they are thinking, not that they are done; if the candidate is silent for a long while (several seconds of true silence, not a thinking pause), gently prompt them once; always stay in English; begin now by greeting the candidate.");
@@ -122,13 +203,11 @@ export default function Speaking(props) {
   function handleServerEvent(evt) {
     var type = evt.type || "";
 
-    // Candidate speech transcribed (various possible event name shapes)
     if (has(type, "input_audio_transcription") && (has(type, "completed") || has(type, "done"))) {
       addLine("me", evt.transcript, evt.item_id || ("in-" + Date.now()));
       return;
     }
 
-    // Examiner speech transcript, streaming then final
     if ((has(type, "audio_transcript") || has(type, "output_text")) && has(type, "delta") && !has(type, "input")) {
       var idD = evt.response_id || evt.item_id || "cur";
       outBufRef.current[idD] = (outBufRef.current[idD] || "") + (evt.delta || "");
@@ -139,11 +218,13 @@ export default function Speaking(props) {
       var idF = evt.response_id || evt.item_id || "cur";
       var full = evt.transcript || outBufRef.current[idF] || "";
       addLine("ex", full, idF + "-final");
+      if (!prepTimerRef.current && full.toLowerCase().indexOf("you now have one minute to prepare your answer") !== -1) {
+        startPrepTimer();
+      }
       delete outBufRef.current[idF];
       return;
     }
 
-    // Fallback: full conversation item finished - pull transcript out of its content array
     if (type === "conversation.item.done" || type === "conversation.item.created") {
       var item = evt.item;
       if (item && item.role === "user") {
@@ -151,7 +232,12 @@ export default function Speaking(props) {
         if (txt) addLine("me", txt, item.id);
       } else if (item && item.role === "assistant") {
         var txt2 = extractTranscriptFromItem(item);
-        if (txt2) addLine("ex", txt2, item.id);
+        if (txt2) {
+          addLine("ex", txt2, item.id);
+          if (!prepTimerRef.current && txt2.toLowerCase().indexOf("you now have one minute to prepare your answer") !== -1) {
+            startPrepTimer();
+          }
+        }
       }
       return;
     }
@@ -165,9 +251,10 @@ export default function Speaking(props) {
   }
 
   function start() {
-    setErr(""); setLines([]); setResult(null); setElapsed(0);
+    setErr(""); setLines([]); setResult(null); setElapsed(0); setPrepActive(false); setPrepSecs(60); setAudioUrl(null);
     outBufRef.current = {};
     seenItemsRef.current = {};
+    audioChunksRef.current = [];
     setStage("connecting");
 
     var instructions = buildInstructions();
@@ -186,6 +273,32 @@ export default function Speaking(props) {
           .then(function (stream) {
             micStreamRef.current = stream;
 
+            // Feature C: AudioContext mixer for recording local + remote audio
+            try {
+              var AC = window.AudioContext || window.webkitAudioContext;
+              if (AC && typeof MediaRecorder !== "undefined") {
+                var ctx = new AC();
+                audioCtxRef.current = ctx;
+                var dest = ctx.createMediaStreamDestination();
+                destNodeRef.current = dest;
+                var localSrc = ctx.createMediaStreamSource(stream);
+                localSrc.connect(dest);
+                var mimeType = "audio/webm";
+                try {
+                  if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+                    mimeType = "audio/webm;codecs=opus";
+                  }
+                } catch (e) {}
+                var rec = new MediaRecorder(dest.stream, { mimeType: mimeType });
+                rec.ondataavailable = function (e) {
+                  if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+                };
+                mediaRecRef.current = rec;
+              }
+            } catch (recSetupErr) {
+              console.warn("Audio recording setup failed:", recSetupErr);
+            }
+
             var pc = new RTCPeerConnection();
             pcRef.current = pc;
 
@@ -195,6 +308,13 @@ export default function Speaking(props) {
                 audioEl.srcObject = event.streams[0];
                 audioEl.play().catch(function () {});
               }
+              // Feature C: connect remote examiner stream to recorder mix
+              try {
+                if (audioCtxRef.current && destNodeRef.current && event.streams[0]) {
+                  var remoteSrc = audioCtxRef.current.createMediaStreamSource(event.streams[0]);
+                  remoteSrc.connect(destNodeRef.current);
+                }
+              } catch (remErr) { console.warn("Remote audio tap failed:", remErr); }
             };
 
             stream.getTracks().forEach(function (track) { pc.addTrack(track, stream); });
@@ -205,6 +325,12 @@ export default function Speaking(props) {
               setStage("live");
               startTimer();
               dc.send(JSON.stringify({ type: "response.create" }));
+              // Feature C: start recording
+              try {
+                if (mediaRecRef.current && mediaRecRef.current.state === "inactive") {
+                  mediaRecRef.current.start(1000);
+                }
+              } catch (recStartErr) { console.warn("MediaRecorder start failed:", recStartErr); }
             };
             dc.onmessage = function (e) {
               try { handleServerEvent(JSON.parse(e.data)); } catch (err2) {}
@@ -249,29 +375,48 @@ export default function Speaking(props) {
     var transcript = linesRef.current
       .map(function (l) { return (l.who === "ex" ? "Examiner" : "Candidate") + ": " + l.text; })
       .join("\n");
-    cleanup();
-    if (!transcript || transcript.length < 40) {
-      setErr(t("Not enough speech was captured to score.", "Baholash uchun yetarli nutq yozilmadi."));
-      setStage("error");
-      return;
-    }
-    fetch("/api/score", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "speakScore", transcript: transcript, lang: lang, password: accessCode }),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (r) {
-        if (r.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
-        if (r.error) { setErr(r.error); setStage("error"); return; }
-        setResult(r);
-        setStage("done");
-        if (onSave) onSave(r, transcript, SPEAKING[setIdx].name);
-      })
-      .catch(function () {
-        setErr(t("Network error.", "Tarmoq xatosi."));
+
+    function doScore(recUrl) {
+      cleanup();
+      if (!transcript || transcript.length < 40) {
+        setErr(t("Not enough speech was captured to score.", "Baholash uchun yetarli nutq yozilmadi."));
         setStage("error");
-      });
+        return;
+      }
+      fetch("/api/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "speakScore", transcript: transcript, lang: lang, password: accessCode }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          if (r.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
+          if (r.error) { setErr(r.error); setStage("error"); return; }
+          setResult(r);
+          setAudioUrl(recUrl || null);
+          setStage("done");
+          if (onSave) onSave(r, transcript, SPEAKING[setIdx].name, recUrl || null);
+        })
+        .catch(function () {
+          setErr(t("Network error.", "Tarmoq xatosi."));
+          setStage("error");
+        });
+    }
+
+    // Feature C: stop recorder, upload, then score
+    var rec = mediaRecRef.current;
+    if (rec && (rec.state === "recording" || rec.state === "paused")) {
+      var recMime = rec.mimeType || "audio/webm";
+      rec.onstop = function () {
+        var blob = audioChunksRef.current.length > 0
+          ? new Blob(audioChunksRef.current, { type: recMime })
+          : null;
+        uploadAudio(blob, doScore);
+      };
+      try { rec.stop(); } catch (e) { console.warn("rec.stop failed:", e); doScore(null); }
+    } else {
+      doScore(null);
+    }
   }
 
   var mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
@@ -283,7 +428,7 @@ export default function Speaking(props) {
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
         {audioTag}
-        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>{"\uD83C\uDF99"} {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
+        <h3 style={{ fontFamily: serif, fontSize: 24, color: V.text, textAlign: "center", margin: "0 0 4px" }}>{"🎙"} {t("Speaking mock test", "Speaking sinov imtihoni")}</h3>
         <p style={{ textAlign: "center", color: V.muted, fontSize: 13.5, margin: "0 0 18px", lineHeight: 1.55 }}>
           {t("A live AI examiner will interview you (Parts 1-3, ~5-6 min). Speak out loud - then Claude scores your fluency, vocabulary and grammar.", "Jonli AI imtihonchi siz bilan suhbat o'tkazadi (Part 1-3, ~5-6 daqiqa). Ovoz bilan gapiring - so'ng Claude ravonlik, lug'at va grammatikani baholaydi.")}
         </p>
@@ -299,7 +444,7 @@ export default function Speaking(props) {
         </div>
         {err ? <p style={{ color: V.bad, fontSize: 13, textAlign: "center", marginBottom: 10 }}>{err}</p> : null}
         <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(255,106,77,0.35)" })}>
-          {"\uD83C\uDFA4"} {t("Start the interview \u2192", "Suhbatni boshlash \u2192")}
+          {"🎤"} {t("Start the interview →", "Suhbatni boshlash →")}
         </button>
         <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
           {t("Uses your microphone. Pronunciation is not scored from transcript (noted honestly in results).", "Mikrofoningiz ishlatiladi. Talaffuz transkriptdan baholanmaydi (natijada halol ko'rsatiladi).")}
@@ -338,9 +483,67 @@ export default function Speaking(props) {
       );
     });
 
+    // Feature A: cue card overlay SVG ring
+    var RING_R = 28;
+    var RING_C = 2 * Math.PI * RING_R;
+    var ringOffset = RING_C * (1 - (prepSecs > 0 ? prepSecs : 0) / 60);
+    var cue = SPEAKING[setIdx].cue;
+
     return (
       <div className="anim" style={{ maxWidth: 640, margin: "6px auto" }}>
         {audioTag}
+
+        {/* Feature A: Part 2 prep timer cue card overlay */}
+        {prepActive ? (
+          <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, width: 292, background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, boxShadow: "0 20px 50px rgba(42,33,30,0.22)", animation: "cardIn .3s ease both" }}>
+            {prepSecs === 0 ? (
+              <div style={{ textAlign: "center", padding: "14px 0" }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>{"🎤"}</div>
+                <div style={{ fontFamily: serif, fontSize: 17, color: V.accent, fontWeight: 700 }}>
+                  {t("Start speaking now!", "Endi gapiring!")}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: V.faint, marginBottom: 10 }}>
+                  {t("Part 2 — Prepare", "Part 2 — Tayyorlanish")}
+                </div>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <svg viewBox="0 0 80 80" width="80" height="80" style={{ flexShrink: 0 }}>
+                    <circle cx="40" cy="40" r={RING_R} fill="none" stroke={V.track} strokeWidth="6" />
+                    <circle
+                      cx="40" cy="40" r={RING_R}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      strokeDasharray={RING_C}
+                      strokeDashoffset={ringOffset}
+                      style={{ transform: "rotate(-90deg)", transformOrigin: "40px 40px", transition: "stroke-dashoffset 1s linear" }}
+                    />
+                    <text x="40" y="40" textAnchor="middle" dominantBaseline="central" fontFamily={serif} fontSize="20" fill={V.text} fontWeight="700">
+                      {prepSecs}
+                    </text>
+                  </svg>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: serif, fontSize: 14, color: V.text, fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>
+                      {cue.topic}
+                    </div>
+                    <ul style={{ margin: 0, padding: "0 0 0 14px", listStyle: "disc" }}>
+                      {cue.points.map(function (p, pi) {
+                        return (
+                          <li key={pi} style={{ fontSize: 12, color: V.muted, lineHeight: 1.5, marginBottom: 2 }}>
+                            {p}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {/* status bar */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", background: V.surface, border: "1px solid " + V.border, borderRadius: 16, padding: "14px 18px", boxShadow: V.shadow, marginBottom: 26 }}>
@@ -352,7 +555,7 @@ export default function Speaking(props) {
             </div>
           </div>
           <button onClick={finish} style={btn({ background: GRAD, color: "#fff", padding: "11px 20px", borderRadius: 12, fontSize: 14, boxShadow: "0 8px 20px var(--accent-soft)" })}>
-            {t("Finish & score \u2192", "Tugatish va baholash \u2192")}
+            {t("Finish & score →", "Tugatish va baholash →")}
           </button>
         </div>
 
@@ -377,7 +580,7 @@ export default function Speaking(props) {
           </div>
         </div>
 
-        {/* transcript (hidden by default) */}
+        {/* transcript */}
         {showTranscript ? (
           <div className="anim" style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 20, boxShadow: V.shadow, marginBottom: 22 }}>
             <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: V.faint, marginBottom: 12 }}>
@@ -423,13 +626,14 @@ export default function Speaking(props) {
 
   if (stage === "done" && result) {
     var critRows = [
-      { label: t("Fluency & Coherence", "Ravonlik va izchillik"), band: result.fc.band },
-      { label: t("Lexical Resource", "Lug'at boyligi"), band: result.lr.band },
-      { label: t("Grammatical Range & Accuracy", "Grammatik diapazon va aniqlik"), band: result.gra.band },
+      { label: t("Fluency & Coherence", "Ravonlik va izchillik"), band: result.fc.band, note: result.fc.note },
+      { label: t("Lexical Resource", "Lug'at boyligi"), band: result.lr.band, note: result.lr.note },
+      { label: t("Grammatical Range & Accuracy", "Grammatik diapazon va aniqlik"), band: result.gra.band, note: result.gra.note },
     ];
-    var strengthLines = (result.strengths || []).map(function (s) { return { mark: "\u2713", color: V.good, text: s }; });
-    var improveLines = (result.improvements || []).map(function (s) { return { mark: "\u2192", color: V.accent, text: s }; });
+    var strengthLines = (result.strengths || []).map(function (s) { return { mark: "✓", color: V.good, text: s }; });
+    var improveLines = (result.improvements || []).map(function (s) { return { mark: "→", color: V.accent, text: s }; });
     var noteLines = strengthLines.concat(improveLines);
+    var errors = result.errors || [];
 
     return (
       <div className="anim" style={{ maxWidth: 560, margin: "10px auto" }}>
@@ -457,6 +661,7 @@ export default function Speaking(props) {
                   <div style={{ height: 7, borderRadius: 100, background: V.track, overflow: "hidden" }}>
                     <div style={{ height: "100%", width: pct, borderRadius: 100, background: "linear-gradient(90deg,var(--accent),var(--accent2))" }} />
                   </div>
+                  {c.note ? <div style={{ fontSize: 11.5, color: V.faint, marginTop: 4, lineHeight: 1.4 }}>{c.note}</div> : null}
                 </div>
               );
             })}
@@ -484,9 +689,46 @@ export default function Speaking(props) {
           })}
         </div>
 
+        {/* Feature B: Corrections card */}
+        {errors.length > 0 ? (
+          <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 16, padding: "16px 18px", marginBottom: 12, boxShadow: V.shadow }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.09em", textTransform: "uppercase", color: V.faint, marginBottom: 12 }}>
+              {t("Corrections", "Tuzatishlar")}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {errors.map(function (er, ei) {
+                return (
+                  <div key={ei} style={{ borderLeft: "3px solid var(--bad)", paddingLeft: 12 }}>
+                    <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+                      <span style={{ textDecoration: "line-through", color: V.bad }}>{er.text}</span>
+                      <span style={{ color: V.muted, margin: "0 6px" }}>{"→"}</span>
+                      <span style={{ color: V.good, fontWeight: 700 }}>{er.fix}</span>
+                    </div>
+                    {er.rule ? (
+                      <div style={{ fontSize: 12, color: V.muted, marginTop: 4 }}>
+                        {"💡"} {er.rule}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Feature C: audio player */}
+        {audioUrl ? (
+          <div style={{ background: V.surface, border: "1px solid " + V.border, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.09em", textTransform: "uppercase", color: V.faint, marginBottom: 10 }}>
+              {t("Session recording", "Sessiya yozuvi")}
+            </div>
+            <audio controls src={audioUrl} style={{ width: "100%", borderRadius: 8 }} />
+          </div>
+        ) : null}
+
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
-            {"\u21BB"} {t("New interview", "Yangi suhbat")}
+          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); setAudioUrl(null); setPrepActive(false); setPrepSecs(60); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
+            {"↻"} {t("New interview", "Yangi suhbat")}
           </button>
         </div>
       </div>

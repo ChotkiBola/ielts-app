@@ -27,7 +27,7 @@ function bandColor(b) { if (b >= 7) return "var(--good)"; if (b >= 6) return "#7
 function fmt(s) { return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
 const etype = (t) => ETYPE[t] || ETYPE.grammar;
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease", ...extra });
-const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra });
+const rowToItem = (r) => ({ id: r.id, date: r.created_at, taskType: r.task_type, taskLabel: r.task_label, qType: r.q_type, qText: r.q_text, essay: r.essay, words: r.words, overall: r.overall, tr: r.tr, cc: r.cc, lr: r.lr, gra: r.gra, audioUrl: r.audio_url });
 const rowToVocabItem = (r) => ({ id: r.id, word: r.word, date: r.created_at });
 function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
@@ -142,6 +142,7 @@ export default function Home() {
   const [pMean, setPMean] = useState({});
   const [profile, setProfile] = useState(null);
   const [adminUsers, setAdminUsers] = useState(null);
+  const [histTab, setHistTab] = useState("writing");
   const restored = useRef(false);
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
@@ -607,10 +608,10 @@ export default function Home() {
         {/* ============ SPEAKING ============ */}
         {tab === "speaking" && (
           <Speaking lang={lang} accessCode={accessCode} onNeedCode={() => setShowGate(true)}
-            onSave={async (r, transcript, setName) => {
-              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band };
+            onSave={async (r, transcript, setName, recUrl) => {
+              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audioUrl: recUrl || null };
               if (hasSupabase && session) {
-                const row = { user_id: session.user.id, task_type: "spk", task_label: "Speaking", q_type: setName, q_text: "Speaking mock (Parts 1-3)", essay: transcript, words: item.words, overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band };
+                const row = { user_id: session.user.id, task_type: "spk", task_label: "Speaking", q_type: setName, q_text: "Speaking mock (Parts 1-3)", essay: transcript, words: item.words, overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audio_url: recUrl || null };
                 const { data, error } = await supabase.from("history").insert(row).select().single();
                 if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
                 else setHistory((h) => [item, ...h].slice(0, 50));
@@ -621,24 +622,48 @@ export default function Home() {
         )}
 
         {/* ============ HISTORY ============ */}
-        {tab === "history" && (
-          <div className="anim">
-            {history.length === 0 && <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 18, padding: 32, textAlign: "center", color: V.muted }}><p style={{ fontSize: 14, margin: 0 }}>{t("No essays scored yet.", "Hali baholangan essay yo'q.")}</p></div>}
-            {history.length >= 2 && (<div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 19, marginBottom: 16, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: V.muted, fontWeight: 700, marginBottom: 10 }}>{t("Band trend (oldest → newest)", "Band o'zgarishi (eski → yangi)")}</div><Trend data={[...history].reverse().map((h) => h.overall)} /></div>)}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {history.map((h) => (
-                <div key={h.id} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, overflow: "hidden", boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
-                  <div onClick={() => setExpanded(expanded === h.id ? -1 : h.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 17, cursor: "pointer" }}>
-                    <div style={{ width: 52, height: 52, borderRadius: 14, background: V.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: serif, fontSize: 21, color: bandColor(h.overall) }}>{Number(h.overall).toFixed(1)}</span></div>
-                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: V.text }}>{h.taskLabel || "Task 2"} · {h.qType} · {h.words} {t("words", "so'z")}</div><div style={{ fontSize: 12, color: V.faint }}>{new Date(h.date).toLocaleString()}</div></div>
-                    <button onClick={(ev) => { ev.stopPropagation(); deleteAttempt(h.id); }} style={btn({ background: "transparent", color: V.bad, fontSize: 13 })}>✕</button>
+        {tab === "history" && (() => {
+          const histShown = history.filter((h) => histTab === "speaking" ? h.taskType === "spk" : h.taskType !== "spk");
+          return (
+            <div className="anim">
+              {/* Writing / Speaking toggle */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 16, background: V.surface2, borderRadius: 12, padding: 4, width: "fit-content" }}>
+                <button onClick={() => setHistTab("writing")} style={tpill(histTab === "writing")}>{t("Writing", "Yozish")}</button>
+                <button onClick={() => setHistTab("speaking")} style={tpill(histTab === "speaking")}>{t("Speaking", "Speaking")}</button>
+              </div>
+              {histShown.length === 0 && <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 18, padding: 32, textAlign: "center", color: V.muted }}><p style={{ fontSize: 14, margin: 0 }}>{histTab === "speaking" ? t("No speaking sessions yet.", "Hali speaking sessiyasi yo'q.") : t("No essays scored yet.", "Hali baholangan essay yo'q.")}</p></div>}
+              {histShown.length >= 2 && (<div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 19, marginBottom: 16, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: V.muted, fontWeight: 700, marginBottom: 10 }}>{t("Band trend (oldest → newest)", "Band o'zgarishi (eski → yangi)")}</div><Trend data={[...histShown].reverse().map((h) => h.overall)} /></div>)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {histShown.map((h) => (
+                  <div key={h.id} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, overflow: "hidden", boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
+                    <div onClick={() => setExpanded(expanded === h.id ? -1 : h.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 17, cursor: "pointer" }}>
+                      <div style={{ width: 52, height: 52, borderRadius: 14, background: V.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: serif, fontSize: 21, color: bandColor(h.overall) }}>{Number(h.overall).toFixed(1)}</span></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: V.text }}>{h.taskType === "spk" ? t("Speaking", "Speaking") + " · " + h.qType : (h.taskLabel || "Task 2") + " · " + h.qType + " · " + h.words + " " + t("words", "so'z")}</div>
+                        <div style={{ fontSize: 12, color: V.faint }}>{new Date(h.date).toLocaleString()}</div>
+                      </div>
+                      <button onClick={(ev) => { ev.stopPropagation(); deleteAttempt(h.id); }} style={btn({ background: "transparent", color: V.bad, fontSize: 13 })}>✕</button>
+                    </div>
+                    {expanded === h.id && h.taskType === "spk" && (
+                      <div style={{ padding: "0 17px 17px", borderTop: `1px solid ${V.border2}` }}>
+                        <div style={{ display: "flex", gap: 16, margin: "12px 0", fontSize: 12, color: V.muted }}><span>FC {h.tr}</span><span>LR {h.lr}</span><span>GRA {h.gra}</span></div>
+                        <div style={{ fontSize: 13.5, color: V.text, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{h.essay}</div>
+                        {h.audioUrl && <audio controls src={h.audioUrl} style={{ width: "100%", marginTop: 12, borderRadius: 8 }} />}
+                      </div>
+                    )}
+                    {expanded === h.id && h.taskType !== "spk" && (
+                      <div style={{ padding: "0 17px 17px", borderTop: `1px solid ${V.border2}` }}>
+                        <div style={{ display: "flex", gap: 16, margin: "12px 0", fontSize: 12, color: V.muted }}><span>TR/TA {h.tr}</span><span>CC {h.cc}</span><span>LR {h.lr}</span><span>GRA {h.gra}</span></div>
+                        <p style={{ fontSize: 13, color: V.text, fontStyle: "italic", margin: "0 0 8px" }}>{h.qText}</p>
+                        <p style={{ fontSize: 13.5, color: V.text, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{h.essay}</p>
+                      </div>
+                    )}
                   </div>
-                  {expanded === h.id && (<div style={{ padding: "0 17px 17px", borderTop: `1px solid ${V.border2}` }}><div style={{ display: "flex", gap: 16, margin: "12px 0", fontSize: 12, color: V.muted }}><span>TR/TA {h.tr}</span><span>CC {h.cc}</span><span>LR {h.lr}</span><span>GRA {h.gra}</span></div><p style={{ fontSize: 13, color: V.text, fontStyle: "italic", margin: "0 0 8px" }}>{h.qText}</p><p style={{ fontSize: 13.5, color: V.text, lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap" }}>{h.essay}</p></div>)}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ============ ADMIN ============ */}
         {tab === "admin" && isAdmin && (
