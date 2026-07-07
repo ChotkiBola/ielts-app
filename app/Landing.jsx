@@ -967,7 +967,7 @@ export default function Landing({ lang, onLang, onStart }) {
           <path d="M20 20c-5-6-13-4-13 3 0 5 6 7 13 4z" />
           <path d="M20 20c5-6 13-4 13 3 0 5-6 7-13 4z" />
         </svg>
-        <h2>{t("Your", "Sizning")} <em>{t("Band 7.5", "Band 7.5")}</em> {t("starts today.", "bugun boshlanadi.")}</h2>
+        <h2>{t("Your", "Sizning")} <em>{t("Band 9", "Band 9")}</em> {t("starts today.", "bugun boshlanadi.")}</h2>
         <p>{t("Free diagnostic across Vocabulary, Writing, Speaking — no credit card needed.", "Lug'at, Yozuv, Gaplashuv bo'yicha bepul diagnostika — kredit karta shart emas.")}</p>
         <button onClick={() => onStart("signup")} className="lp-btn lp-btn-light" style={{ marginTop: 34 }}>
           {t("Start your free diagnostic →", "Bepul diagnostikani boshlash →")}
