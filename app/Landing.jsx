@@ -2,29 +2,33 @@
 import React, { useEffect, useRef } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import Logo from "./Logo";
+import { PricingCards } from "./Pricing";
 
-const coral = "#FF6A4D";
-const orange = "#FF8A3D";
-const amber = "#FFA524";
-const gold = "#FFA524";
-const ink = "#2A211E";
-const inkSoft = "#6B5D56";
-const cream = "#FFF6ED";
-const creamDim = "#FDEEE0";
-const paper = "#FFFDFB";
-const borderLine = "rgba(42,33,30,0.10)";
+const coral = "#6D4FE0";
+const orange = "#8B5CF6";
+const amber = "#D9A441";
+const gold = "#D9A441";
+const ink = "#241E33";
+const inkSoft = "#6E6580";
+const cream = "#F8F5FC";
+const creamDim = "#EFEAF8";
+const paper = "#FDFCFF";
+const borderLine = "rgba(36,30,51,0.10)";
 const green = "#2E8B57";
-const coffee900 = "#1B120C";
-const coffee800 = "#2B1B12";
-const coffee700 = "#402615";
-const serif = "'DM Serif Display', serif";
+const coffee900 = "#150F26";
+const coffee800 = "#221A3A";
+const coffee700 = "#322659";
+const serif = "'Fraunces', 'DM Serif Display', serif";
 const sans = "'Plus Jakarta Sans', system-ui, sans-serif";
 const easeStr = "cubic-bezier(.16,.84,.44,1)";
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-.lp{font-family:${sans};font-size:16px;line-height:1.5;background:${cream};color:${ink};overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+.lp{font-family:${sans};font-size:16px;line-height:1.5;background:${cream};color:${ink};overflow-x:hidden;-webkit-font-smoothing:antialiased;
+  --surface:#ffffff;--surface-2:#F1EBFA;--text:#241E33;--muted:#6E6580;--faint:#9A91AC;--border:rgba(36,30,51,0.10);
+  --accent:#6D4FE0;--accent2:#C13D8F;--accent-soft:rgba(109,79,224,0.10);--gold:#B87F2E;--gold-soft:rgba(184,127,46,0.12);--good:#2FB98A;}
 .lp *,.lp *::before,.lp *::after{box-sizing:border-box;margin:0;padding:0;}
 .lp img,.lp svg{display:block;max-width:100%;}
 .lp button{font:inherit;cursor:pointer;border:none;background:none;color:inherit;}
@@ -39,12 +43,12 @@ const CSS = `
 .lp .lp-con{width:100%;max-width:1180px;margin:0 auto;padding:0 32px;}
 @media(max-width:560px){.lp .lp-con{padding:0 20px;}}
 
-.lp .lp-eyebrow{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#C24A1B;background:${paper};border:1px solid ${borderLine};padding:8px 16px 8px 12px;border-radius:999px;}
-.lp .lp-dot{width:7px;height:7px;border-radius:50%;background:${coral};box-shadow:0 0 0 4px rgba(255,106,77,0.22);flex-shrink:0;}
+.lp .lp-eyebrow{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#5636C7;background:${paper};border:1px solid ${borderLine};padding:8px 16px 8px 12px;border-radius:999px;}
+.lp .lp-dot{width:7px;height:7px;border-radius:50%;background:${coral};box-shadow:0 0 0 4px rgba(109,79,224,0.22);flex-shrink:0;}
 
 .lp .lp-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:15px 26px;border-radius:999px;font-weight:700;font-size:15px;white-space:nowrap;transition:transform .35s ${easeStr},box-shadow .35s ${easeStr},background .25s ease,color .25s ease;}
-.lp .lp-btn-primary{background:${ink};color:${cream};box-shadow:0 14px 30px -12px rgba(33,22,16,.55);}
-.lp .lp-btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 34px -12px rgba(33,22,16,.6);background:#C24A1B;}
+.lp .lp-btn-primary{background:${ink};color:${cream};box-shadow:0 14px 30px -12px rgba(24,18,40,.55);}
+.lp .lp-btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 34px -12px rgba(24,18,40,.6);background:#5636C7;}
 .lp .lp-btn-ghost{background:transparent;color:${ink};border:1.5px solid ${borderLine};}
 .lp .lp-btn-ghost:hover{border-color:${ink};transform:translateY(-2px);}
 .lp .lp-btn-light{background:${cream};color:${ink};}
@@ -52,7 +56,7 @@ const CSS = `
 
 /* ── NAV ── */
 .lp .lp-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:background .3s ease,box-shadow .3s ease,padding .3s ease;}
-.lp .lp-nav.scrolled{background:rgba(255,246,237,0.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 1px 0 ${borderLine};padding:12px 0;}
+.lp .lp-nav.scrolled{background:rgba(248,245,252,0.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 1px 0 ${borderLine};padding:12px 0;}
 .lp .lp-nav-row{display:flex;align-items:center;justify-content:space-between;gap:24px;}
 .lp .lp-brand{display:flex;align-items:center;gap:10px;font-family:${serif};font-weight:600;font-size:20px;letter-spacing:-.01em;cursor:pointer;}
 .lp .lp-nav-links{display:flex;align-items:center;gap:32px;font-weight:600;font-size:14.5px;}
@@ -68,8 +72,8 @@ const CSS = `
 .lp .lp-hero{position:relative;padding:168px 0 120px;overflow:hidden;isolation:isolate;}
 @media(max-width:560px){.lp .lp-hero{padding:140px 0 90px;}}
 .lp .lp-blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;will-change:transform;pointer-events:none;}
-.lp .lp-blob-1{width:520px;height:520px;background:radial-gradient(circle,rgba(255,193,160,1),transparent 70%);top:-140px;right:-80px;animation:lpdrift1 26s ease-in-out infinite;}
-.lp .lp-blob-2{width:420px;height:420px;background:radial-gradient(circle,#FFE1C2,transparent 70%);bottom:-160px;left:-100px;animation:lpdrift2 32s ease-in-out infinite;}
+.lp .lp-blob-1{width:520px;height:520px;background:radial-gradient(circle,rgba(200,180,255,1),transparent 70%);top:-140px;right:-80px;animation:lpdrift1 26s ease-in-out infinite;}
+.lp .lp-blob-2{width:420px;height:420px;background:radial-gradient(circle,#E7DCFA,transparent 70%);bottom:-160px;left:-100px;animation:lpdrift2 32s ease-in-out infinite;}
 .lp .lp-blob-3{width:300px;height:300px;background:radial-gradient(circle,${gold},transparent 72%);top:30%;left:38%;opacity:.28;animation:lpdrift1 22s ease-in-out infinite reverse;}
 @keyframes lpdrift1{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(-40px,50px) scale(1.14);}}
 @keyframes lpdrift2{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(50px,-30px) scale(1.1);}}
@@ -85,7 +89,7 @@ const CSS = `
 .lp .lp-hero-trust{display:flex;align-items:center;gap:14px;margin-top:44px;font-size:13.5px;color:${inkSoft};font-weight:600;flex-wrap:wrap;}
 
 .lp .lp-hero-visual{position:relative;perspective:1200px;}
-.lp .lp-grade-card{background:${paper};border-radius:28px;border:1px solid ${borderLine};box-shadow:0 30px 60px -25px rgba(43,27,18,0.35);padding:26px;width:100%;max-width:420px;margin-left:auto;transform:rotate(2.2deg);transition:transform .5s ${easeStr};}
+.lp .lp-grade-card{background:${paper};border-radius:28px;border:1px solid ${borderLine};box-shadow:0 30px 60px -25px rgba(26,19,44,0.35);padding:26px;width:100%;max-width:420px;margin-left:auto;transform:rotate(2.2deg);transition:transform .5s ${easeStr};}
 @media(max-width:980px){.lp .lp-grade-card{margin:0 auto;transform:none;}}
 .lp .lp-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
 .lp .lp-grade-tag{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:${inkSoft};}
@@ -93,7 +97,7 @@ const CSS = `
 .lp .lp-grade-live i{width:7px;height:7px;border-radius:50%;background:${green};animation:lppulse 1.6s ease-in-out infinite;flex-shrink:0;}
 @keyframes lppulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 .lp .lp-essay-box{background:${creamDim};border-radius:14px;padding:16px 18px;min-height:118px;font-size:14.5px;line-height:1.7;}
-.lp .lp-essay-mark{background:rgba(255,106,77,0.18);color:#C24A1B;border-radius:4px;padding:0 3px;font-weight:600;}
+.lp .lp-essay-mark{background:rgba(109,79,224,0.18);color:#5636C7;border-radius:4px;padding:0 3px;font-weight:600;}
 .lp .lp-cursor{display:inline-block;width:2px;height:15px;background:${coral};vertical-align:middle;animation:lpblink 1s step-end infinite;margin-left:1px;}
 @keyframes lpblink{50%{opacity:0;}}
 .lp .lp-score-row{display:flex;align-items:center;gap:16px;margin-top:20px;}
@@ -102,10 +106,10 @@ const CSS = `
 .lp .lp-criteria{margin-top:18px;display:flex;flex-direction:column;gap:10px;}
 .lp .lp-criteria-row{font-size:12.5px;font-weight:600;color:${inkSoft};}
 .lp .lp-criteria-label{display:flex;justify-content:space-between;margin-bottom:5px;}
-.lp .lp-bar-track{height:6px;border-radius:4px;background:rgba(33,22,16,.08);overflow:hidden;}
+.lp .lp-bar-track{height:6px;border-radius:4px;background:rgba(24,18,40,.08);overflow:hidden;}
 .lp .lp-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,${gold},${coral});width:0%;}
 
-.lp .lp-float-chip{position:absolute;background:${paper};border:1px solid ${borderLine};border-radius:999px;padding:9px 15px;font-size:12.5px;font-weight:700;box-shadow:0 20px 40px -20px rgba(43,27,18,0.3);display:flex;align-items:center;gap:8px;}
+.lp .lp-float-chip{position:absolute;background:${paper};border:1px solid ${borderLine};border-radius:999px;padding:9px 15px;font-size:12.5px;font-weight:700;box-shadow:0 20px 40px -20px rgba(26,19,44,0.3);display:flex;align-items:center;gap:8px;}
 .lp .lp-chip-1{top:-18px;left:-30px;animation:lpfloaty 5s ease-in-out infinite;}
 .lp .lp-chip-2{bottom:6%;right:-8%;animation:lpfloaty 6s ease-in-out infinite 1s;}
 @keyframes lpfloaty{0%,100%{transform:translateY(0);}50%{transform:translateY(-12px);}}
@@ -147,14 +151,14 @@ const CSS = `
 .lp .lp-network-inner{position:relative;z-index:2;}
 .lp .lp-network-head{max-width:640px;}
 .lp .lp-network-head .lp-eyebrow{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:${gold};}
-.lp .lp-network-head .lp-dot{background:${gold};box-shadow:0 0 0 4px rgba(255,165,36,0.25);}
+.lp .lp-network-head .lp-dot{background:${gold};box-shadow:0 0 0 4px rgba(217,164,65,0.25);}
 .lp .lp-network-h2{font-family:${serif};font-weight:600;font-size:clamp(32px,4vw,48px);line-height:1.12;margin-top:22px;letter-spacing:-.01em;}
 .lp .lp-network-h2 em{font-style:italic;color:${gold};font-weight:500;}
 .lp .lp-network-head p{margin-top:20px;font-size:17px;line-height:1.7;color:#D8C7B7;max-width:540px;}
 .lp .lp-nf-grid{margin-top:56px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
 @media(max-width:980px){.lp .lp-nf-grid{grid-template-columns:1fr;}}
 .lp .lp-nf-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:26px 24px;backdrop-filter:blur(6px);}
-.lp .lp-nf-icon{width:38px;height:38px;border-radius:10px;background:rgba(255,165,36,0.16);display:flex;align-items:center;justify-content:center;margin-bottom:16px;color:${gold};}
+.lp .lp-nf-icon{width:38px;height:38px;border-radius:10px;background:rgba(217,164,65,0.16);display:flex;align-items:center;justify-content:center;margin-bottom:16px;color:${gold};}
 .lp .lp-nf-card h3{font-size:16px;font-weight:700;margin-bottom:8px;}
 .lp .lp-nf-card p{font-size:14px;color:#C9B8A8;line-height:1.6;}
 
@@ -171,11 +175,11 @@ const CSS = `
 @media(max-width:980px){.lp .lp-skills-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:560px){.lp .lp-skills-grid{grid-template-columns:1fr;}}
 .lp .lp-skill-card{grid-column:span 2;background:${paper};border:1px solid ${borderLine};border-radius:18px;padding:28px 26px;transition:transform .4s ${easeStr},box-shadow .4s ${easeStr},border-color .4s ease;}
-.lp .lp-skill-card:hover{transform:translateY(-6px);box-shadow:0 30px 60px -25px rgba(43,27,18,0.35);border-color:transparent;}
+.lp .lp-skill-card:hover{transform:translateY(-6px);box-shadow:0 30px 60px -25px rgba(26,19,44,0.35);border-color:transparent;}
 .lp .lp-skill-card.big{grid-column:span 4;display:grid;grid-template-columns:1.1fr .9fr;gap:32px;align-items:center;}
 @media(max-width:980px){.lp .lp-skill-card.big{grid-column:span 2;grid-template-columns:1fr;}}
 @media(max-width:560px){.lp .lp-skill-card,.lp .lp-skill-card.big{grid-column:span 1;grid-template-columns:1fr;}}
-.lp .lp-skill-icon{width:44px;height:44px;border-radius:12px;background:rgba(255,106,77,0.16);color:#C24A1B;display:flex;align-items:center;justify-content:center;margin-bottom:18px;}
+.lp .lp-skill-icon{width:44px;height:44px;border-radius:12px;background:rgba(109,79,224,0.16);color:#5636C7;display:flex;align-items:center;justify-content:center;margin-bottom:18px;}
 .lp .lp-skill-card h3{font-size:18.5px;font-weight:700;margin-bottom:10px;letter-spacing:-.01em;}
 .lp .lp-skill-card p{font-size:14.5px;color:${inkSoft};line-height:1.65;}
 .lp .lp-skill-tags{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;}
@@ -205,12 +209,12 @@ const CSS = `
 .lp .lp-fb-card h4{font-size:15px;font-weight:700;margin-bottom:12px;color:${ink};}
 .lp .lp-fb-row{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.55;margin-top:8px;}
 .lp .lp-fb-icon{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;margin-top:1px;}
-.lp .lp-fb-icon.err{background:rgba(255,106,77,0.15);color:#C24A1B;}
+.lp .lp-fb-icon.err{background:rgba(109,79,224,0.15);color:#5636C7;}
 .lp .lp-fb-icon.fix{background:rgba(46,139,87,0.15);color:${green};}
 .lp .lp-fb-row.note{margin-top:14px;font-size:13px;color:${inkSoft};}
 .lp .lp-fb-band-row{display:flex;gap:10px;align-items:center;font-size:12.5px;font-weight:600;margin-top:8px;}
 .lp .lp-fb-band-pill{font-family:${serif};font-size:20px;font-weight:600;color:${coral};min-width:36px;text-align:right;flex-shrink:0;}
-.lp .lp-fb-bar-track{flex:1;height:6px;border-radius:4px;background:rgba(33,22,16,.08);overflow:hidden;}
+.lp .lp-fb-bar-track{flex:1;height:6px;border-radius:4px;background:rgba(24,18,40,.08);overflow:hidden;}
 .lp .lp-fb-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,${gold},${coral});}
 
 /* ── FINAL CTA ── */
@@ -230,7 +234,7 @@ const CSS = `
 .lp .lp-footer-cols{display:flex;gap:64px;flex-wrap:wrap;}
 .lp .lp-footer-col h4{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:${inkSoft};margin-bottom:16px;}
 .lp .lp-footer-col a{display:block;font-size:14.5px;font-weight:600;margin-bottom:12px;opacity:.85;cursor:pointer;}
-.lp .lp-footer-col a:hover{opacity:1;color:#C24A1B;}
+.lp .lp-footer-col a:hover{opacity:1;color:#5636C7;}
 .lp .lp-footer-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:28px;font-size:13px;color:${inkSoft};flex-wrap:wrap;gap:12px;}
 @media(max-width:980px){.lp .lp-footer-top{flex-direction:column;gap:32px;}}
 
@@ -239,12 +243,7 @@ const CSS = `
 `;
 
 function BrandMark() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
-      <rect x="6" y="6" width="20" height="20" rx="6" transform="rotate(45 16 16)" fill={coral} />
-      <rect x="11" y="11" width="10" height="10" rx="3" transform="rotate(45 16 16)" fill="rgba(255,236,220,0.9)" />
-    </svg>
-  );
+  return <Logo size={32} style={{ flexShrink: 0 }} />;
 }
 
 function IconBook() {
@@ -349,7 +348,7 @@ export default function Landing({ lang, onLang, onStart }) {
             const dy = nodes[i].y - nodes[j].y;
             const d = Math.sqrt(dx * dx + dy * dy);
             if (d < 140) {
-              ctx2d.strokeStyle = `rgba(255,165,36,${0.16 * (1 - d / 140)})`;
+              ctx2d.strokeStyle = `rgba(217,164,65,${0.16 * (1 - d / 140)})`;
               ctx2d.lineWidth = 1;
               ctx2d.beginPath();
               ctx2d.moveTo(nodes[i].x, nodes[i].y);
@@ -622,7 +621,7 @@ export default function Landing({ lang, onLang, onStart }) {
           <nav className="lp-nav-links">
             <a href="#skills">{t("Skills", "Ko'nikmalar")}</a>
             <a href="#how">{t("How it works", "Qanday ishlaydi")}</a>
-            <a href="#pricing">{t("Get started", "Boshlash")}</a>
+            <a href="#pricing">{t("Pricing", "Narxlar")}</a>
           </nav>
           <div className="lp-nav-actions">
             <div className="lp-lang" role="group">
@@ -749,10 +748,10 @@ export default function Landing({ lang, onLang, onStart }) {
                 <path d="M20 8c-2-4-6-6-6-6" />
                 <path d="M20 8c2-4 6-6 6-6" />
                 <line x1="20" y1="9" x2="20" y2="32" />
-                <path className="lp-wing" d="M20 11c-6-9-18-8-18 1 0 7 8 10 18 6z" fill="rgba(255,106,77,0.2)" />
-                <path className="lp-wing lp-wing-r" d="M20 11c6-9 18-8 18 1 0 7-8 10-18 6z" fill="rgba(255,106,77,0.2)" />
-                <path className="lp-wing" d="M20 20c-5-6-13-4-13 3 0 5 6 7 13 4z" fill="rgba(255,106,77,0.2)" />
-                <path className="lp-wing lp-wing-r" d="M20 20c5-6 13-4 13 3 0 5-6 7-13 4z" fill="rgba(255,106,77,0.2)" />
+                <path className="lp-wing" d="M20 11c-6-9-18-8-18 1 0 7 8 10 18 6z" fill="rgba(109,79,224,0.2)" />
+                <path className="lp-wing lp-wing-r" d="M20 11c6-9 18-8 18 1 0 7-8 10-18 6z" fill="rgba(109,79,224,0.2)" />
+                <path className="lp-wing" d="M20 20c-5-6-13-4-13 3 0 5 6 7 13 4z" fill="rgba(109,79,224,0.2)" />
+                <path className="lp-wing lp-wing-r" d="M20 20c5-6 13-4 13 3 0 5-6 7-13 4z" fill="rgba(109,79,224,0.2)" />
               </svg>
             </div>
             <div className="lp-meta-copy">
@@ -958,8 +957,25 @@ export default function Landing({ lang, onLang, onStart }) {
         </div>
       </section>
 
+      {/* ── PRICING ── */}
+      <section id="pricing" style={{ padding: "96px 0 110px" }}>
+        <div className="lp-con">
+          <div style={{ textAlign: "center", maxWidth: 560, margin: "0 auto 44px" }}>
+            <span className="lp-eyebrow"><span className="lp-dot" />{t("Pricing", "Narxlar")}</span>
+            <h2 style={{ fontFamily: serif, fontWeight: 600, fontSize: "clamp(30px,3.6vw,44px)", lineHeight: 1.1, letterSpacing: "-.015em", marginTop: 22 }}>
+              {t("Start in the cocoon.", "Pillada boshlang.")}<br />
+              <em style={{ fontStyle: "italic", color: coral, fontWeight: 500 }}>{t("Emerge a butterfly.", "Kapalak bo'lib chiqing.")}</em>
+            </h2>
+            <p style={{ marginTop: 16, fontSize: 16, lineHeight: 1.65, color: inkSoft }}>
+              {t("Free to start, upgrade when you're serious about your target band. No credit card needed.", "Boshlash bepul — maqsad bandga jiddiy kirishganingizda yangilang. Kredit karta shart emas.")}
+            </p>
+          </div>
+          <PricingCards lang={lang} plan="free" onChoose={() => onStart("signup")} />
+        </div>
+      </section>
+
       {/* ── FINAL CTA ── */}
-      <section className="lp-final" id="pricing">
+      <section className="lp-final" id="start">
         <svg className="lp-final-wm" viewBox="0 0 40 40" fill="none" stroke={gold} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <line x1="20" y1="9" x2="20" y2="32" />
           <path d="M20 11c-6-9-18-8-18 1 0 7 8 10 18 6z" />

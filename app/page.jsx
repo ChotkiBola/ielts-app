@@ -185,6 +185,7 @@ export default function Home() {
   const [profEdit, setProfEdit] = useState(false);
   const [profForm, setProfForm] = useState({ full_name: "", phone: "", level: "", target: "" });
   const [profMode, setProfMode] = useState(null);
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [gapDeck, setGapDeck] = useState([]);
   const [gapIdx, setGapIdx] = useState(0);
   const [gapAnswer, setGapAnswer] = useState("");
@@ -252,9 +253,13 @@ export default function Home() {
   async function logout() { setHistory([]); setMyVocab([]); setProfile(null); setAdminUsers(null); if (supabase) await supabase.auth.signOut(); }
 
   async function api(payload) {
-    const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" },
+    const headers = { "Content-Type": "application/json" };
+    if (hasSupabase && session && session.access_token) headers["Authorization"] = "Bearer " + session.access_token;
+    const res = await fetch("/api/score", { method: "POST", headers,
       body: JSON.stringify({ taskType, question: q.text, qType: q.type, lang, chartSummary: q.chart ? q.chart.summary : null, password: accessCode, ...payload }) });
-    return res.json();
+    const data = await res.json();
+    if (res.status === 402 && data.limitReached) { setUpgradeInfo(data); }
+    return data;
   }
 
   async function saveAttempt(parsed) {
@@ -435,6 +440,17 @@ export default function Home() {
             <p style={{ fontSize: 13, color: V.muted, margin: "0 0 14px", lineHeight: 1.5 }}>{t("This app is protected to prevent misuse.", "Bu app suiiste'molni oldini olish uchun himoyalangan.")}</p>
             <input value={gateInput} onChange={(e) => setGateInput(e.target.value)} type="password" placeholder="••••••••" onKeyDown={(e) => { if (e.key === "Enter") saveGate(); }} style={{ width: "100%", padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 11, fontSize: 15, outline: "none", color: V.text, background: V.surface }} />
             <button onClick={saveGate} style={btn({ marginTop: 12, width: "100%", background: GRAD, color: "#fff", padding: "12px", borderRadius: 11, fontSize: 14 })}>{t("Save & continue", "Saqlash va davom etish")}</button>
+          </div>
+        </div>
+      )}
+
+      {upgradeInfo && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(20,14,10,.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }}>
+          <div className="anim" style={{ background: V.surface, borderRadius: 18, padding: 26, width: 360, maxWidth: "100%", boxShadow: V.shadow, textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>🚀</div>
+            <h3 style={{ margin: "0 0 8px", fontFamily: serif, fontSize: 20, color: V.text }}>{t("Weekly free limit reached", "Haftalik bepul limit tugadi")}</h3>
+            <p style={{ fontSize: 13.5, color: V.muted, margin: "0 0 18px", lineHeight: 1.5 }}>{t("Upgrade to Pro for unlimited essays and speaking sessions.", "Cheksiz essay va speaking uchun Pro rejaga o'ting.")}</p>
+            <button onClick={() => setUpgradeInfo(null)} style={btn({ width: "100%", background: GRAD, color: "#fff", padding: "12px", borderRadius: 11, fontSize: 14 })}>{t("Got it", "Tushunarli")}</button>
           </div>
         </div>
       )}
@@ -712,7 +728,7 @@ export default function Home() {
 
         {/* ============ SPEAKING ============ */}
         {tab === "speaking" && (
-          <Speaking lang={lang} accessCode={accessCode} onNeedCode={() => setShowGate(true)}
+          <Speaking lang={lang} accessCode={accessCode} accessToken={hasSupabase && session ? session.access_token : null} onNeedCode={() => setShowGate(true)} onLimitReached={(info) => setUpgradeInfo(info)}
             onSave={async (r, transcript, setName, recUrl) => {
               const item = { id: Date.now(), date: new Date().toISOString(), taskType: "spk", taskLabel: "Speaking", qType: setName, qText: "Speaking mock (Parts 1-3)", essay: transcript, words: countWords(transcript), overall: r.overall, tr: r.fc.band, cc: null, lr: r.lr.band, gra: r.gra.band, audioUrl: recUrl || null, errors: r.errors || [] };
               if (hasSupabase && session) {
@@ -931,20 +947,35 @@ export default function Home() {
             {adminUsers && adminUsers.length === 0 && <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 18, padding: 30, textAlign: "center", color: V.muted }}>{t("No users yet.", "Hali foydalanuvchi yo'q.")}</div>}
             {adminUsers && adminUsers.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {adminUsers.map((u) => (
-                  <div key={u.user_id} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 17, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 800, fontSize: 15, color: V.text }}>{u.full_name || t("(no name)", "(ismsiz)")}</span>
-                      {u.target != null && <span style={{ fontSize: 12, color: V.accent, fontWeight: 800 }}>🎯 {Number(u.target).toFixed(1)}</span>}
+                {adminUsers.map((u) => {
+                  const isPro = u.plan === "pro" && (!u.plan_expires || new Date(u.plan_expires) > new Date());
+                  async function togglePlan() {
+                    const newPlan = isPro ? "free" : "pro";
+                    const expires = newPlan === "pro" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null;
+                    await supabase.from("profiles").update({ plan: newPlan, plan_expires: expires }).eq("user_id", u.user_id);
+                    setAdminUsers((list) => list.map((x) => x.user_id === u.user_id ? { ...x, plan: newPlan, plan_expires: expires } : x));
+                  }
+                  return (
+                    <div key={u.user_id} style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 17, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 800, fontSize: 15, color: V.text }}>{u.full_name || t("(no name)", "(ismsiz)")}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {u.target != null && <span style={{ fontSize: 12, color: V.accent, fontWeight: 800 }}>🎯 {Number(u.target).toFixed(1)}</span>}
+                          <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .5, textTransform: "uppercase", padding: "3px 9px", borderRadius: 999, background: isPro ? "rgba(47,185,138,0.15)" : V.surface2, color: isPro ? V.good : V.muted }}>{isPro ? "PRO" : "FREE"}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 12.5, color: V.muted }}>
+                        {u.phone && <span>📞 {u.phone}</span>}
+                        {u.email && <span>✉ {u.email}</span>}
+                        {u.level && <span>📊 {u.level}</span>}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                        <div style={{ fontSize: 11, color: V.faint }}>{t("Joined", "Qo'shilgan")}: {new Date(u.created_at).toLocaleString()}</div>
+                        <button onClick={togglePlan} style={btn({ background: isPro ? V.surface2 : GRAD, color: isPro ? V.text : "#fff", padding: "6px 13px", borderRadius: 8, fontSize: 11.5, border: isPro ? `1px solid ${V.border}` : "none" })}>{isPro ? t("Set Free", "Free qilish") : t("Set Pro (30d)", "Pro qilish (30 kun)")}</button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 6, fontSize: 12.5, color: V.muted }}>
-                      {u.phone && <span>📞 {u.phone}</span>}
-                      {u.email && <span>✉ {u.email}</span>}
-                      {u.level && <span>📊 {u.level}</span>}
-                    </div>
-                    <div style={{ fontSize: 11, color: V.faint, marginTop: 6 }}>{t("Joined", "Qo'shilgan")}: {new Date(u.created_at).toLocaleString()}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <p style={{ textAlign: "center", color: V.faint, fontSize: 11, marginTop: 20 }}>{t("Visible to admins only.", "Faqat adminlarga ko'rinadi.")}</p>

@@ -1,7 +1,7 @@
 import React from "react";
 
 const PALETTE = {
-  light: { ink: "#2A211E", slate: "#6B5D56", line: "#F0E3D6", grid: "#F3EADF", paper: "#FFFFFF", step: "#FFF6ED" },
+  light: { ink: "#241E33", slate: "#6E6580", line: "#E7E0F2", grid: "#EFE9F8", paper: "#FFFFFF", step: "#F8F5FC" },
   dark:  { ink: "#F3E9E0", slate: "#B0A096", line: "#3A2D25", grid: "#3A2D25", paper: "#241C17", step: "#191410" },
 };
 
