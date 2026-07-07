@@ -758,13 +758,13 @@ export default function Landing({ lang, onLang, onStart }) {
             <div className="lp-meta-copy">
               <span className="lp-eyebrow"><span className="lp-dot" />{t("Your transformation", "Sizning o'zgarishingiz")}</span>
               <h2 className="lp-meta-h2">
-                {t("Every learner starts in a", "Har bir o'quvchi")} <em>{t("cocoon.", "g'umbakda boshlaydi.")}</em>{" "}
-                {t("You leave at Band 7.5.", "Siz Band 7.5 bilan chiqasiz.")}
+                {t("Every learner starts in a", "Har bir o'quvchi")} <em>{t("cocoon.", "pillada boshlaydi.")}</em>{" "}
+                {t("You emerge with your estimated IELTS band score.", "Siz o'zingiz istagan Band bilan chiqasiz.")}
               </h2>
               <p>
                 {t(
-                  "No one walks in fluent. Your coach meets you at Band 5, 5.5, or 6 — and works every session toward the version of you that walks out ready.",
-                  "Hech kim tayyor holda kelmaydi. Murabbiy sizni Band 5, 5.5 yoki 6 dan qabul qiladi va har mashg'ulotda tayyor versiyangizga qarab ishlaydi."
+                  "No one walks in fluent. Your AI coach meets you at Band 5, 5.5, or 6 — and works every session toward the version of you that walks out ready.",
+                  "Hech kim tayyor holda kelmaydi. Ai Ustoz sizni Band 5, 5.5 yoki 6 dan qabul qiladi va har mashg'ulotda tayyor versiyangizga qarab ishlaydi."
                 )}
               </p>
             </div>
@@ -803,7 +803,7 @@ export default function Landing({ lang, onLang, onStart }) {
             <p>
               {t(
                 "Your coach doesn't just mark right or wrong. It scores Writing and Speaking against the same four criteria real IELTS examiners use, then explains exactly what to fix before test day.",
-                "Murabbiy shunchaki to'g'ri-noto'g'ri deb belgilamaydi. U Writing va Speakingni haqiqiy IELTS imtihonchilar ishlatadigan 4 mezon bo'yicha baholaydi va imtihon oldidan nima tuzatishni aniq tushuntiradi."
+                "Ai Ustoz shunchaki to'g'ri-noto'g'ri deb belgilamaydi. U Writing va Speakingni haqiqiy IELTS imtihonchilar ishlatadigan 4 mezon bo'yicha baholaydi va imtihon oldidan nima tuzatishni aniq tushuntiradi."
               )}
             </p>
           </div>
@@ -817,7 +817,7 @@ export default function Landing({ lang, onLang, onStart }) {
               {
                 icon: <IconClock />,
                 title: t("Feedback that explains why", "Sababini tushuntiradigan izoh"),
-                desc: t("Every score comes with the specific sentence or word that cost you marks.", "Har bir baho siz ball yo'qotgan aniq gap yoki so'z bilan birga keladi."),
+                desc: t("Every score comes with the specific sentence or word that cost you marks.", "Har bir baho siz ball yo'qotishga sabab bo'lgan aniq gap yoki so'z bilan birga keladi."),
               },
               {
                 icon: <IconGlobe />,
@@ -840,7 +840,7 @@ export default function Landing({ lang, onLang, onStart }) {
         <div className="lp-con">
           <div className="lp-sec-head">
             <span className="lp-eyebrow"><span className="lp-dot" />{t("Every skill, one coach", "Har bir ko'nikma, bitta murabbiy")}</span>
-            <h2>{t("Tons of skills. One clear path to", "Ko'p ko'nikmalar. ")} <em>{t("Band 7.5.", "Band 7.5")}</em>{t("", "ga aniq yo'l.")}</h2>
+            <h2>{t("Tons of skills. One clear path to", "Ko'p ko'nikmalar. ")} <em>{t("Result.", "Natija")}</em>{t("", "ga aniq yo'l.")}</h2>
             <p>{t("Every module targets a real part of the IELTS score — and your coach keeps steering practice toward whichever one is holding you back.", "Har bir modul IELTSning haqiqiy qismini maqsad qiladi — murabbiy esa sizni orqada ushlab turgan qismga yo'naltiradi.")}</p>
           </div>
           <div className="lp-skills-grid">
@@ -870,7 +870,7 @@ export default function Landing({ lang, onLang, onStart }) {
         <div className="lp-con">
           <div className="lp-sec-head">
             <span className="lp-eyebrow"><span className="lp-dot" />{t("How it works", "Qanday ishlaydi")}</span>
-            <h2>{t("From first guess to", "Birinchi taxminden")} <em>{t("Band 7.5", "Band 7.5")}</em>{t(", in four steps.", ", to'rt qadamda.")}</h2>
+            <h2>{t("From first guess to", "Birinchi taxmindan")} <em>{t("Result", "Natija")}</em>{t(", in four steps.", ", to'rt qadamda.")}</h2>
             <p>{t("No generic course to sit through — just a path built around your actual gaps.", "O'tirish uchun umumiy kurs yo'q — faqat sizning haqiqiy kamchiliklaringizga asoslangan yo'l.")}</p>
           </div>
           <div className="lp-process-track">
