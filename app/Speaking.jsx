@@ -324,6 +324,7 @@ export default function Speaking(props) {
             dc.onopen = function () {
               setStage("live");
               startTimer();
+              dc.send(JSON.stringify({ type: "session.update", session: { instructions: instructions, modalities: ["audio", "text"], turn_detection: { type: "server_vad" } } }));
               dc.send(JSON.stringify({ type: "response.create" }));
               // Feature C: start recording
               try {
@@ -344,7 +345,7 @@ export default function Speaking(props) {
             });
           })
           .then(function (offer) {
-            return fetch("https://api.openai.com/v1/realtime/calls", {
+            return fetch("https://api.openai.com/v1/realtime?model=" + encodeURIComponent(sess.model), {
               method: "POST",
               body: offer.sdp,
               headers: {

@@ -147,7 +147,7 @@ export async function POST(request) {
       const res = await fetch("https://api.openai.com/v1/realtime/sessions", {
         method: "POST",
         headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, instructions: body.instructions }),
+        body: JSON.stringify({ model }),
       });
       const data = await res.json();
       if (!res.ok || !data.client_secret || !data.client_secret.value) {
