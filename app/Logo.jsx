@@ -2,51 +2,30 @@
 import React from "react";
 
 /*
- * Brand mark: a butterfly emerging mid-metamorphosis — the body is still a
- * cocoon (gold, ribbed chrysalis) while the wings have already unfolded
- * (violet → magenta gradient). Cocoon in, butterfly out.
+ * Brand mark: a minimal, symmetric butterfly built from four curved wing
+ * lobes around a single body line, using the app's accent gradient.
  */
-export default function Logo({ size = 28, style = {} }) {
+export default function Logo({ size = 24, style = {} }) {
   const id = React.useId().replace(/:/g, "");
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" style={style} aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, ...style }} aria-hidden="true">
       <defs>
-        <linearGradient id={`wu${id}`} x1="4" y1="10" x2="22" y2="30" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#9B79FF" />
-          <stop offset="1" stopColor="#6742E0" />
-        </linearGradient>
-        <linearGradient id={`wl${id}`} x1="10" y1="32" x2="22" y2="44" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#E56AB4" />
-          <stop offset="1" stopColor="#BC3B8D" />
-        </linearGradient>
-        <linearGradient id={`cb${id}`} x1="19" y1="10" x2="29" y2="42" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#E9BC66" />
-          <stop offset="1" stopColor="#B87F2E" />
+        <linearGradient id={`lg${id}`} x1="2" y1="4" x2="38" y2="36" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--accent, #6D4FE0)" />
+          <stop offset="1" stopColor="var(--accent2, #C13D8F)" />
         </linearGradient>
       </defs>
-
-      {/* upper wings */}
-      <path d="M21 27.5 C11 31 2.5 26 3 18.5 C3.4 11.5 12 9 20.8 20.4 C21.3 21.2 21.4 26.7 21 27.5 Z" fill={`url(#wu${id})`} />
-      <path d="M27 27.5 C37 31 45.5 26 45 18.5 C44.6 11.5 36 9 27.2 20.4 C26.7 21.2 26.6 26.7 27 27.5 Z" fill={`url(#wu${id})`} />
-      {/* lower wings */}
-      <path d="M20.8 30.5 C13.5 33 8.5 39 11.5 42.3 C14.4 45.4 20 42 21.4 34.8 C21.6 33.5 21.3 31 20.8 30.5 Z" fill={`url(#wl${id})`} />
-      <path d="M27.2 30.5 C34.5 33 39.5 39 36.5 42.3 C33.6 45.4 28 42 26.6 34.8 C26.4 33.5 26.7 31 27.2 30.5 Z" fill={`url(#wl${id})`} />
-      {/* wing highlights */}
-      <path d="M18.6 23.5 C13.5 25.5 8.8 23.6 8 19.6 C10.8 17 15.6 18.6 18.6 23.5 Z" fill="#FFFFFF" opacity=".22" />
-      <path d="M29.4 23.5 C34.5 25.5 39.2 23.6 40 19.6 C37.2 17 32.4 18.6 29.4 23.5 Z" fill="#FFFFFF" opacity=".22" />
-
-      {/* cocoon body */}
-      <path d="M24 9 C27.5 13 29 19 29 25.5 C29 33.5 26.8 39.5 24 42.5 C21.2 39.5 19 33.5 19 25.5 C19 19 20.5 13 24 9 Z" fill={`url(#cb${id})`} />
-      {/* chrysalis ribs */}
-      <path d="M20 18.5 Q24 20.8 28 18.5" stroke="#8A5D1E" strokeWidth="1.1" strokeLinecap="round" opacity=".45" fill="none" />
-      <path d="M19.3 25.5 Q24 27.8 28.7 25.5" stroke="#8A5D1E" strokeWidth="1.1" strokeLinecap="round" opacity=".45" fill="none" />
-      <path d="M20.2 32.5 Q24 34.6 27.8 32.5" stroke="#8A5D1E" strokeWidth="1.1" strokeLinecap="round" opacity=".45" fill="none" />
-
       {/* antennae */}
-      <path d="M22.5 10.5 C21 7.5 18.8 6.1 17 6.3" stroke="#B87F2E" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-      <path d="M25.5 10.5 C27 7.5 29.2 6.1 31 6.3" stroke="#B87F2E" strokeWidth="1.4" strokeLinecap="round" fill="none" />
-      <circle cx="16.6" cy="6.2" r="1.3" fill="#B87F2E" />
-      <circle cx="31.4" cy="6.2" r="1.3" fill="#B87F2E" />
+      <path d="M20 8c-2-4-6-6-6-6" stroke={`url(#lg${id})`} strokeWidth="1.6" strokeLinecap="round" fill="none" />
+      <path d="M20 8c2-4 6-6 6-6" stroke={`url(#lg${id})`} strokeWidth="1.6" strokeLinecap="round" fill="none" />
+      {/* body */}
+      <line x1="20" y1="9" x2="20" y2="31" stroke={`url(#lg${id})`} strokeWidth="1.6" strokeLinecap="round" />
+      {/* upper wings */}
+      <path d="M20 11c-6-9-18-8-18 1 0 7 8 10 18 6z" fill={`url(#lg${id})`} opacity=".92" />
+      <path d="M20 11c6-9 18-8 18 1 0 7-8 10-18 6z" fill={`url(#lg${id})`} opacity=".92" />
+      {/* lower wings */}
+      <path d="M20 20c-5-6-13-4-13 3 0 5 6 7 13 4z" fill={`url(#lg${id})`} opacity=".76" />
+      <path d="M20 20c5-6 13-4 13 3 0 5-6 7-13 4z" fill={`url(#lg${id})`} opacity=".76" />
     </svg>
   );
 }

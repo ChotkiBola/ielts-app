@@ -6,6 +6,9 @@ import TaskChart from "./TaskChart";
 import Auth from "./Auth";
 import Landing from "./Landing";
 import Speaking from "./Speaking";
+import Reading from "./Reading";
+import Listening from "./Listening";
+import Logo from "./Logo";
 import { supabase, hasSupabase } from "./lib/supabase";
 
 // CSS-variable palette (tokens live in globals.css .app-root)
@@ -67,6 +70,9 @@ function NavIcon({ name }) {
   if (name === "vocab") return (<svg {...common}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" /><path d="M4 5.5v15" /></svg>);
   if (name === "history") return (<svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>);
   if (name === "profile") return (<svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" /></svg>);
+  if (name === "reading") return (<svg {...common}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" /></svg>);
+  if (name === "listening") return (<svg {...common}><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z" /><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3Z" /></svg>);
+  if (name === "mock") return (<svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></svg>);
   return null;
 }
 
@@ -138,6 +144,7 @@ export default function Home() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [tab, setTab] = useState("write");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [phase, setPhase] = useState("edit");
   const [lang, setLang] = useState("en");
   const [taskType, setTaskType] = useState("t2");
@@ -245,6 +252,13 @@ export default function Home() {
   useEffect(() => { try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} }, [theme]);
   useEffect(() => { try { localStorage.setItem(TARGET_KEY, String(targetBand)); } catch (e) {} }, [targetBand]);
   useEffect(() => { if (!running) return; if (secondsLeft <= 0) { setRunning(false); return; } const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000); return () => clearInterval(id); }, [running, secondsLeft]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    function onKey(e) { if (e.key === "Escape") setDrawerOpen(false); }
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [drawerOpen]);
 
   function persistVocab(next) { setMyVocab(next); try { localStorage.setItem(VOCAB_KEY, JSON.stringify(next)); } catch (e) {} }
   function clearOutputs() { setResult(null); setError(""); setActiveErr(-1); setModelText(""); setImproved(null); setTrans(null); }
@@ -349,9 +363,19 @@ export default function Home() {
   }, [pMode, pIdx]);
 
   const isAdmin = !!(profile && profile.is_admin);
-  const TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")], ["profile", t("Profile", "Profil")]];
-  if (isAdmin) TABS.push(["admin", "Admin"]);
-  const BOTTOM_TABS = [["write", t("Write", "Yozish")], ["speaking", t("Speaking", "Speaking")], ["vocab", t("Vocab", "Lug'at")], ["history", t("History", "Tarix")], ["profile", t("Profile", "Profil")]];
+  const MOCK_ITEMS = [
+    ["write", "✍️", t("Writing", "Yozish")],
+    ["speaking", "🎙", t("Speaking", "Speaking")],
+    ["reading", "📖", t("Reading", "O'qish")],
+    ["listening", "🎧", t("Listening", "Tinglash")],
+  ];
+  const OTHER_ITEMS = [
+    ["vocab", "🎴", t("Vocab", "Lug'at")],
+    ["history", "📈", t("History", "Tarix")],
+    ["profile", "👤", t("Profile", "Profil")],
+  ];
+  if (isAdmin) OTHER_ITEMS.push(["admin", "🛠️", "Admin"]);
+  const MOCK_TAB_KEYS = ["write", "speaking", "reading", "listening"];
   async function loadAdmin() {
     if (!isAdmin || !supabase) return;
     const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
@@ -377,7 +401,7 @@ export default function Home() {
   }
 
   const profStats = useMemo(() => {
-    const writingHist = history.filter((h) => h.taskType !== "spk");
+    const writingHist = history.filter((h) => h.taskType !== "spk" && h.taskType !== "reading" && h.taskType !== "listening");
     const speakingHist = history.filter((h) => h.taskType === "spk");
     const avgBand = writingHist.length ? writingHist.reduce((a, h) => a + (h.overall || 0), 0) / writingHist.length : null;
     const bestBand = history.length ? Math.max(...history.map((h) => h.overall || 0)) : null;
@@ -459,27 +483,46 @@ export default function Home() {
 
       {/* ===== TOP BAR ===== */}
       <header style={{ position: "sticky", top: 0, zIndex: 40, background: V.surface, borderBottom: `1px solid ${V.border}`, backdropFilter: "blur(12px)" }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "13px 26px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 24, height: 24, background: GRAD, borderRadius: 7, transform: "rotate(45deg)", boxShadow: "0 4px 14px rgba(255,106,77,0.4)" }} />
+        <div className="header-inner" style={{ maxWidth: 1180, margin: "0 auto", padding: "13px 26px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div className="header-brand" style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <button onClick={() => setDrawerOpen(true)} aria-label={t("Open menu", "Menyuni ochish")} className="header-burger">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+            </button>
+            <Logo size={24} />
             <span className="brand" style={{ fontFamily: serif, fontSize: 21, color: V.text }}>IELTS Writing Coach</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
-            <nav className="top-tabs" style={{ display: "flex", gap: 20 }}>
-              {TABS.map(([k, l]) => (
-                <button key={k} onClick={() => setTab(k)} style={btn({ background: "transparent", padding: "6px 2px", fontSize: 14.5, color: tab === k ? V.accent : V.muted, borderBottom: `2px solid ${tab === k ? "var(--accent)" : "transparent"}`, borderRadius: 0 })}>{l}</button>
-              ))}
-            </nav>
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <div style={{ display: "flex", background: V.surface2, borderRadius: 10, padding: 3 }}>
-                {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (<button key={k} onClick={() => setLang(k)} style={btn({ padding: "5px 11px", borderRadius: 8, fontSize: 12.5, background: lang === k ? V.text : "transparent", color: lang === k ? V.bg : V.muted })}>{l}</button>))}
-              </div>
-              <button onClick={() => setTheme(theme === "light" ? "dark" : "light")} style={btn({ width: 36, height: 36, borderRadius: 10, background: V.surface2, color: V.text, fontSize: 15 })}>{theme === "light" ? "☾" : "☀"}</button>
-              {hasSupabase && session && (<button onClick={logout} title={session.user.email} style={btn({ padding: "8px 15px", borderRadius: 10, fontSize: 13, background: V.surface, border: `1px solid ${V.border}`, color: V.text })}>{t("Log out", "Chiqish")}</button>)}
+          <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ display: "flex", background: V.surface2, borderRadius: 10, padding: 3 }}>
+              {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (<button key={k} onClick={() => setLang(k)} style={btn({ padding: "5px 11px", borderRadius: 8, fontSize: 12.5, background: lang === k ? V.text : "transparent", color: lang === k ? V.bg : V.muted })}>{l}</button>))}
             </div>
+            <button onClick={() => setTheme(theme === "light" ? "dark" : "light")} style={btn({ width: 36, height: 36, borderRadius: 10, background: V.surface2, color: V.text, fontSize: 15 })}>{theme === "light" ? "☾" : "☀"}</button>
+            {hasSupabase && session && (<button onClick={logout} title={session.user.email} style={btn({ padding: "8px 15px", borderRadius: 10, fontSize: 13, background: V.surface, border: `1px solid ${V.border}`, color: V.text })}>{t("Log out", "Chiqish")}</button>)}
           </div>
         </div>
       </header>
+
+      {/* ===== LEFT NAV DRAWER ===== */}
+      {drawerOpen && <div className="nav-drawer-overlay" onClick={() => setDrawerOpen(false)} />}
+      <aside className={"nav-drawer" + (drawerOpen ? " open" : "")} role="dialog" aria-hidden={!drawerOpen}>
+        <div className="nav-drawer-head">
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: serif, fontSize: 17, color: V.text }}><Logo size={22} /> IELTS Coach</span>
+          <button onClick={() => setDrawerOpen(false)} aria-label={t("Close menu", "Menyuni yopish")} className="nav-drawer-close">✕</button>
+        </div>
+        <div className="nav-drawer-body">
+          <div className="nav-drawer-label">IELTS MOCK</div>
+          {MOCK_ITEMS.map(([k, icon, label]) => (
+            <button key={k} className={"nav-drawer-item" + (tab === k ? " active" : "")} onClick={() => { setTab(k); setDrawerOpen(false); }}>
+              <span className="nav-drawer-icon">{icon}</span>{label}
+            </button>
+          ))}
+          <div className="nav-drawer-divider" />
+          {OTHER_ITEMS.map(([k, icon, label]) => (
+            <button key={k} className={"nav-drawer-item" + (tab === k ? " active" : "")} onClick={() => { setTab(k); setDrawerOpen(false); }}>
+              <span className="nav-drawer-icon">{icon}</span>{label}
+            </button>
+          ))}
+        </div>
+      </aside>
 
       <div className="wrap" style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 26px 0" }}>
 
@@ -742,17 +785,59 @@ export default function Home() {
             }} />
         )}
 
+        {/* ============ READING ============ */}
+        {tab === "reading" && (
+          <Reading lang={lang}
+            onSave={(r, kind) => {
+              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "reading", taskLabel: "Reading", qType: r.setName, qText: t("Reading practice", "O'qish mashqi"), essay: t(`Score: ${r.raw}/${r.total} (est. ${r.scaled}/40)`, `Natija: ${r.raw}/${r.total} (taxminan ${r.scaled}/40)`), words: 0, overall: r.band, tr: null, cc: null, lr: null, gra: null, errors: [] };
+              if (hasSupabase && session) {
+                const row = { user_id: session.user.id, task_type: "reading", task_label: "Reading", q_type: r.setName, q_text: item.qText, essay: item.essay, words: 0, overall: r.band, tr: null, cc: null, lr: null, gra: null, errors: [] };
+                supabase.from("history").insert(row).select().single().then(({ data, error }) => {
+                  if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
+                  else setHistory((h) => [item, ...h].slice(0, 50));
+                });
+              } else {
+                setHistory((h) => { const next = [item, ...h].slice(0, 50); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} return next; });
+              }
+            }} />
+        )}
+
+        {/* ============ LISTENING ============ */}
+        {tab === "listening" && (
+          <Listening lang={lang}
+            onSave={(r, kind) => {
+              const item = { id: Date.now(), date: new Date().toISOString(), taskType: "listening", taskLabel: "Listening", qType: r.setName, qText: t("Listening practice", "Tinglash mashqi"), essay: t(`Score: ${r.raw}/${r.total} (est. ${r.scaled}/40)`, `Natija: ${r.raw}/${r.total} (taxminan ${r.scaled}/40)`), words: 0, overall: r.band, tr: null, cc: null, lr: null, gra: null, errors: [] };
+              if (hasSupabase && session) {
+                const row = { user_id: session.user.id, task_type: "listening", task_label: "Listening", q_type: r.setName, q_text: item.qText, essay: item.essay, words: 0, overall: r.band, tr: null, cc: null, lr: null, gra: null, errors: [] };
+                supabase.from("history").insert(row).select().single().then(({ data, error }) => {
+                  if (!error && data) setHistory((h) => [rowToItem(data), ...h].slice(0, 50));
+                  else setHistory((h) => [item, ...h].slice(0, 50));
+                });
+              } else {
+                setHistory((h) => { const next = [item, ...h].slice(0, 50); try { localStorage.setItem(HIST_KEY, JSON.stringify(next)); } catch (e) {} return next; });
+              }
+            }} />
+        )}
+
         {/* ============ HISTORY ============ */}
         {tab === "history" && (() => {
-          const histShown = history.filter((h) => histTab === "speaking" ? h.taskType === "spk" : h.taskType !== "spk");
+          const histShown = history.filter((h) => {
+            if (histTab === "speaking") return h.taskType === "spk";
+            if (histTab === "reading") return h.taskType === "reading";
+            if (histTab === "listening") return h.taskType === "listening";
+            return h.taskType !== "spk" && h.taskType !== "reading" && h.taskType !== "listening";
+          });
+          const emptyMsg = { speaking: t("No speaking sessions yet.", "Hali speaking sessiyasi yo'q."), reading: t("No reading practice yet.", "Hali o'qish mashqi yo'q."), listening: t("No listening practice yet.", "Hali tinglash mashqi yo'q."), writing: t("No essays scored yet.", "Hali baholangan essay yo'q.") }[histTab];
           return (
             <div className="anim">
-              {/* Writing / Speaking toggle */}
-              <div style={{ display: "flex", gap: 6, marginBottom: 16, background: V.surface2, borderRadius: 12, padding: 4, width: "fit-content" }}>
+              {/* Writing / Speaking / Reading / Listening toggle */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 16, background: V.surface2, borderRadius: 12, padding: 4, width: "fit-content", flexWrap: "wrap" }}>
                 <button onClick={() => setHistTab("writing")} style={tpill(histTab === "writing")}>{t("Writing", "Yozish")}</button>
                 <button onClick={() => setHistTab("speaking")} style={tpill(histTab === "speaking")}>{t("Speaking", "Speaking")}</button>
+                <button onClick={() => setHistTab("reading")} style={tpill(histTab === "reading")}>{t("Reading", "O'qish")}</button>
+                <button onClick={() => setHistTab("listening")} style={tpill(histTab === "listening")}>{t("Listening", "Tinglash")}</button>
               </div>
-              {histShown.length === 0 && <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 18, padding: 32, textAlign: "center", color: V.muted }}><p style={{ fontSize: 14, margin: 0 }}>{histTab === "speaking" ? t("No speaking sessions yet.", "Hali speaking sessiyasi yo'q.") : t("No essays scored yet.", "Hali baholangan essay yo'q.")}</p></div>}
+              {histShown.length === 0 && <div style={{ background: V.surface, border: `1px dashed ${V.border}`, borderRadius: 18, padding: 32, textAlign: "center", color: V.muted }}><p style={{ fontSize: 14, margin: 0 }}>{emptyMsg}</p></div>}
               {histShown.length >= 2 && (<div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 19, marginBottom: 16, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}><div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: V.muted, fontWeight: 700, marginBottom: 10 }}>{t("Band trend (oldest → newest)", "Band o'zgarishi (eski → yangi)")}</div><Trend data={[...histShown].reverse().map((h) => h.overall)} /></div>)}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {histShown.map((h) => (
@@ -760,7 +845,7 @@ export default function Home() {
                     <div onClick={() => setExpanded(expanded === h.id ? -1 : h.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 17, cursor: "pointer" }}>
                       <div style={{ width: 52, height: 52, borderRadius: 14, background: V.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: serif, fontSize: 21, color: bandColor(h.overall) }}>{Number(h.overall).toFixed(1)}</span></div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 700, color: V.text }}>{h.taskType === "spk" ? t("Speaking", "Speaking") + " · " + h.qType : (h.taskLabel || "Task 2") + " · " + h.qType + " · " + h.words + " " + t("words", "so'z")}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: V.text }}>{h.taskType === "spk" ? t("Speaking", "Speaking") + " · " + h.qType : (h.taskType === "reading" || h.taskType === "listening") ? (h.taskLabel + " · " + h.qType) : (h.taskLabel || "Task 2") + " · " + h.qType + " · " + h.words + " " + t("words", "so'z")}</div>
                         <div style={{ fontSize: 12, color: V.faint }}>{new Date(h.date).toLocaleString()}</div>
                       </div>
                       <button onClick={(ev) => { ev.stopPropagation(); deleteAttempt(h.id); }} style={btn({ background: "transparent", color: V.bad, fontSize: 13 })}>✕</button>
@@ -772,7 +857,12 @@ export default function Home() {
                         {h.audioUrl && <audio controls src={h.audioUrl} style={{ width: "100%", marginTop: 12, borderRadius: 8 }} />}
                       </div>
                     )}
-                    {expanded === h.id && h.taskType !== "spk" && (
+                    {expanded === h.id && (h.taskType === "reading" || h.taskType === "listening") && (
+                      <div style={{ padding: "0 17px 17px", borderTop: `1px solid ${V.border2}` }}>
+                        <p style={{ fontSize: 13.5, color: V.text, lineHeight: 1.6, margin: "12px 0 0" }}>{h.essay}</p>
+                      </div>
+                    )}
+                    {expanded === h.id && h.taskType !== "spk" && h.taskType !== "reading" && h.taskType !== "listening" && (
                       <div style={{ padding: "0 17px 17px", borderTop: `1px solid ${V.border2}` }}>
                         <div style={{ display: "flex", gap: 16, margin: "12px 0", fontSize: 12, color: V.muted }}><span>TR/TA {h.tr}</span><span>CC {h.cc}</span><span>LR {h.lr}</span><span>GRA {h.gra}</span></div>
                         <p style={{ fontSize: 13, color: V.text, fontStyle: "italic", margin: "0 0 8px" }}>{h.qText}</p>
@@ -987,12 +1077,21 @@ export default function Home() {
 
       {/* ===== BOTTOM NAVIGATION (mobile) ===== */}
       <nav className="bottom-nav">
-        {BOTTOM_TABS.map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={"bn-btn" + (tab === k ? " active" : "")}>
-            <NavIcon name={k} />
-            <span>{l}</span>
-          </button>
-        ))}
+        <button onClick={() => setTab("write")} className={"bn-btn" + (tab === "write" ? " active" : "")}>
+          <NavIcon name="write" /><span>{t("Write", "Yozish")}</span>
+        </button>
+        <button onClick={() => setDrawerOpen(true)} className={"bn-btn" + (MOCK_TAB_KEYS.includes(tab) ? " active" : "")}>
+          <NavIcon name="mock" /><span>{t("Mock", "Sinov")}</span>
+        </button>
+        <button onClick={() => setTab("vocab")} className={"bn-btn" + (tab === "vocab" ? " active" : "")}>
+          <NavIcon name="vocab" /><span>{t("Vocab", "Lug'at")}</span>
+        </button>
+        <button onClick={() => setTab("history")} className={"bn-btn" + (tab === "history" ? " active" : "")}>
+          <NavIcon name="history" /><span>{t("History", "Tarix")}</span>
+        </button>
+        <button onClick={() => setTab("profile")} className={"bn-btn" + (tab === "profile" ? " active" : "")}>
+          <NavIcon name="profile" /><span>{t("Profile", "Profil")}</span>
+        </button>
       </nav>
     </main>
   );

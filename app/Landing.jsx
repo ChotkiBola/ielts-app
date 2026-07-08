@@ -57,16 +57,22 @@ const CSS = `
 /* ── NAV ── */
 .lp .lp-nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:18px 0;transition:background .3s ease,box-shadow .3s ease,padding .3s ease;}
 .lp .lp-nav.scrolled{background:rgba(248,245,252,0.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 1px 0 ${borderLine};padding:12px 0;}
-.lp .lp-nav-row{display:flex;align-items:center;justify-content:space-between;gap:24px;}
-.lp .lp-brand{display:flex;align-items:center;gap:10px;font-family:${serif};font-weight:600;font-size:20px;letter-spacing:-.01em;cursor:pointer;}
+.lp .lp-nav-row{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:nowrap;}
+.lp .lp-brand{display:flex;align-items:center;gap:10px;font-family:${serif};font-weight:600;font-size:20px;letter-spacing:-.01em;cursor:pointer;min-width:0;flex:1 1 auto;}
+.lp .lp-brand-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .lp .lp-nav-links{display:flex;align-items:center;gap:32px;font-weight:600;font-size:14.5px;}
 .lp .lp-nav-links a{opacity:.75;transition:opacity .2s ease;cursor:pointer;}
 .lp .lp-nav-links a:hover{opacity:1;}
-.lp .lp-nav-actions{display:flex;align-items:center;gap:14px;}
+.lp .lp-nav-actions{display:flex;align-items:center;gap:14px;flex:0 0 auto;}
 .lp .lp-lang{display:flex;background:${paper};border:1px solid ${borderLine};border-radius:999px;padding:3px;font-size:12.5px;font-weight:700;}
 .lp .lp-lang button{padding:6px 11px;border-radius:999px;color:${inkSoft};transition:background .2s,color .2s;}
 .lp .lp-lang button.active{background:${ink};color:${cream};}
 @media(max-width:980px){.lp .lp-nav-links{display:none;}}
+@media(max-width:480px){
+  .lp .lp-brand{font-size:16px;gap:7px;}
+  .lp .lp-nav-actions{gap:8px;}
+  .lp .lp-lang button{padding:5px 9px;font-size:11.5px;}
+}
 
 /* ── HERO ── */
 .lp .lp-hero{position:relative;padding:168px 0 120px;overflow:hidden;isolation:isolate;}
@@ -117,6 +123,10 @@ const CSS = `
 .lp .lp-scroll-cue{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:${inkSoft};opacity:.7;}
 .lp .lp-scline{width:1px;height:34px;background:linear-gradient(${inkSoft},transparent);animation:lpscdown 1.8s ease-in-out infinite;}
 @keyframes lpscdown{0%{transform:scaleY(0);transform-origin:top;}50%{transform:scaleY(1);transform-origin:top;}51%{transform-origin:bottom;}100%{transform:scaleY(0);transform-origin:bottom;}}
+@media(max-width:768px){
+  .lp .lp-scroll-cue{display:none;}
+  .lp .lp-float-chip{display:none;}
+}
 
 /* ── METAMORPHOSIS ── */
 .lp .lp-meta{position:relative;padding:40px 0 110px;}
@@ -616,7 +626,7 @@ export default function Landing({ lang, onLang, onStart }) {
         <div className="lp-con lp-nav-row">
           <button className="lp-brand" onClick={() => onStart("signup")}>
             <BrandMark />
-            IELTS Coach
+            <span className="lp-brand-text">IELTS Coach</span>
           </button>
           <nav className="lp-nav-links">
             <a href="#skills">{t("Skills", "Ko'nikmalar")}</a>
@@ -629,11 +639,8 @@ export default function Landing({ lang, onLang, onStart }) {
                 <button key={k} onClick={() => onLang(k)} className={lang === k ? "active" : ""}>{l}</button>
               ))}
             </div>
-            <button onClick={() => onStart("login")} style={{ border: `1px solid ${borderLine}`, background: paper, padding: "11px 18px", borderRadius: 999, fontWeight: 700, fontSize: 13.5, color: ink, transition: "all .2s" }}>
+            <button onClick={() => onStart("login")} style={{ border: `1px solid ${borderLine}`, background: paper, padding: "11px 18px", borderRadius: 999, fontWeight: 700, fontSize: 13.5, color: ink, transition: "all .2s", whiteSpace: "nowrap" }}>
               {t("Log in", "Kirish")}
-            </button>
-            <button onClick={() => onStart("signup")} className="lp-btn lp-btn-primary" style={{ padding: "11px 20px", fontSize: 13.5 }}>
-              {t("Start free", "Bepul boshlash")}
             </button>
           </div>
         </div>
