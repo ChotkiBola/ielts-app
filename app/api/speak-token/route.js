@@ -24,7 +24,9 @@ export async function POST(request) {
     if (!res.ok || !data.client_secret || !data.client_secret.value) {
       return Response.json({ error: (data.error && data.error.message) || "Could not create realtime token." }, { status: 502 });
     }
-    return Response.json({ key: data.client_secret.value, model });
+    if (!sess.ek) { throw new Error(sess.error || "Could not start session."); }
+...
+headers: { "Authorization": "Bearer " + sess.ek, ... }
   } catch (e) {
     return Response.json({ error: e.message || "Server error." }, { status: 500 });
   }
