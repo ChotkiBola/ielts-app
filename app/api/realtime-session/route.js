@@ -144,10 +144,10 @@ export async function POST(request) {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured on the server." }, { status: 500 });
       const model = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview-2024-12-17";
-      const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+      const res = await fetch("https://api.openai.com/v1/realtime/sessions", {
         method: "POST",
         headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ session: { type: "realtime", model, instructions: body.instructions } }),
+        body: JSON.stringify({ model, instructions: body.instructions }),
       });
       const data = await res.json();
       if (!res.ok || !data.client_secret || !data.client_secret.value) {
