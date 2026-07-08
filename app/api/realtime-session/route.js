@@ -139,6 +139,23 @@ export async function POST(request) {
     const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
     if (rateLimited(ip)) return Response.json({ error: "Too many requests. Please wait a while and try again." }, { status: 429 });
 
+    // Speaking session: create an OpenAI Realtime ephemeral key with the examiner instructions.
+    if (body.instructions) {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) return Response.json({ error: "OPENAI_API_KEY is not configured on the server." }, { status: 500 });
+      const model = process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview-2024-12-17";
+      const res = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ session: { type: "realtime", model, instructions: body.instructions } }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.client_secret || !data.client_secret.value) {
+        return Response.json({ error: (data.error && data.error.message) || "Could not create realtime token." }, { status: 502 });
+      }
+      return Response.json({ ek: data.client_secret.value, model });
+    }
+
     const { mode = "score", taskType = "t2", targetBand, target, word, question, qType, essay, words, lang, chartSummary } = body;
     const language = lang === "uz" ? "Uzbek" : "English";
     const tm = TASK_DESC[taskType] || TASK_DESC.t2;
