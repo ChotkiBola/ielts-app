@@ -9,19 +9,35 @@ const sans = "'Plus Jakarta Sans', system-ui, sans-serif";
 
 const LEVELS = ["Beginner", "4.5 – 5.0", "5.5 – 6.0", "6.5 – 7.0", "7.5+", "Not sure"];
 const TARGETS = [5.5, 6, 6.5, 7, 7.5, 8];
+const AGE_RANGES = ["Under 18", "18–24", "25–34", "35+"];
 
 export default function Auth({ lang, onLang, initialMode, onBack }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const [mode, setMode] = useState(initialMode || "login");
+  const [step, setStep] = useState(1);
+
+  // login fields
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+
+  // signup wizard fields
+  const [gender, setGender] = useState("");
+  const [ageRange, setAgeRange] = useState("");
   const [level, setLevel] = useState("");
   const [target, setTarget] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+
+  function switchMode(k) {
+    setMode(k); setStep(1); setErr(""); setMsg("");
+  }
+
+  function nextStep() { setErr(""); setStep((s) => Math.min(3, s + 1)); }
+  function backStep() { setErr(""); setStep((s) => Math.max(1, s - 1)); }
 
   async function submit() {
     setErr(""); setMsg("");
@@ -42,6 +58,7 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
           await supabase.from("profiles").insert({
             user_id: uid, email: email.trim(), full_name: name.trim(), phone: phone.trim(),
             level: level || null, target: target ? Number(target) : null,
+            gender: gender || null, age_range: ageRange || null,
           });
         }
         setMsg(t("Account created! Signing you in…", "Hisob yaratildi! Kirilmoqda…"));
@@ -68,6 +85,23 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
     width: "100%", boxSizing: "border-box", display: "block",
   };
 
+  function cardBtn(active) {
+    return {
+      cursor: "pointer", border: "1.5px solid " + (active ? coral : "rgba(36,30,51,0.14)"),
+      background: active ? "rgba(109,79,224,0.08)" : "#FDFCFF", color: ink,
+      borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 14, fontWeight: 700,
+      textAlign: "center", transition: "all .18s ease",
+    };
+  }
+  function chipBtn(active) {
+    return {
+      cursor: "pointer", border: "1.5px solid " + (active ? coral : "rgba(36,30,51,0.14)"),
+      background: active ? tabGrad : "#FDFCFF", color: active ? "#fff" : ink,
+      borderRadius: 999, padding: "8px 15px", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+      transition: "all .18s ease",
+    };
+  }
+
   return (
     <div style={{ position: "relative", overflow: "hidden", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 16px", background: "linear-gradient(180deg,#F1EBFA,#F8F5FC)", fontFamily: sans }}>
       <style>{`
@@ -75,12 +109,12 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
         @keyframes aauroraA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(60px,-40px) scale(1.15)}}
         @keyframes aauroraB{0%,100%{transform:translate(0,0) scale(1.05)}50%{transform:translate(-50px,40px) scale(0.92)}}
         @keyframes afadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes astepIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:translateX(0)}}
         .ainp:focus{border-color:#6D4FE0!important;background:#fff!important;box-shadow:0 0 0 3px rgba(109,79,224,0.14)!important}
         @media(hover:hover){.asubmit:not(:disabled):hover{transform:translateY(-2px)!important}}
-
-        /* level/target grid stacks on very small screens */
         .asel-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
         @media(max-width:400px){.asel-grid{grid-template-columns:1fr}}
+        .astepwrap{animation:astepIn .28s ease both}
       `}</style>
 
       {/* aurora blobs */}
@@ -94,56 +128,126 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
             <div style={{ width: 22, height: 22, background: `linear-gradient(135deg,${coral},${amber})`, borderRadius: 6, transform: "rotate(45deg)", boxShadow: "0 4px 14px rgba(109,79,224,0.4)", flexShrink: 0 }} />
             <span style={{ fontFamily: serif, fontSize: "clamp(20px,5vw,26px)", color: ink }}>IELTS Writing Coach</span>
           </div>
-          <p style={{ fontSize: 14, color: muted, margin: "8px 0 0" }}>{t("Sign in to track your progress","Natijalaringizni kuzatish uchun kiring")}</p>
+          <p style={{ fontSize: 14, color: muted, margin: "8px 0 0" }}>{t("Sign in to track your progress", "Natijalaringizni kuzatish uchun kiring")}</p>
         </div>
 
         {/* card */}
         <div style={{ background: "#fff", borderRadius: 22, padding: "22px 20px", boxShadow: "0 30px 70px rgba(36,30,51,0.13)", border: "1px solid rgba(36,30,51,0.05)" }}>
           {/* tab toggle */}
           <div style={{ display: "flex", background: "#F1EBFA", borderRadius: 13, padding: 5, gap: 4, marginBottom: 20 }}>
-            {[["login", t("Log in","Kirish")], ["signup", t("Sign up","Ro'yxatdan o'tish")]].map(([k, l]) => (
-              <button key={k} onClick={() => { setMode(k); setErr(""); setMsg(""); }}
+            {[["login", t("Log in", "Kirish")], ["signup", t("Sign up", "Ro'yxatdan o'tish")]].map(([k, l]) => (
+              <button key={k} onClick={() => switchMode(k)}
                 style={{ flex: 1, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 14, padding: "10px 8px", borderRadius: 9, background: mode === k ? tabGrad : "transparent", color: mode === k ? "#fff" : muted, boxShadow: mode === k ? "0 6px 16px rgba(109,79,224,0.32)" : "none", transition: "all .2s" }}>{l}</button>
             ))}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {isSignup && (
-              <>
-                <input className="ainp" value={name} onChange={e => setName(e.target.value)} placeholder={t("Full name *","To'liq ism *")} style={inp} />
-                <input className="ainp" value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder={t("Phone number *","Telefon raqam *")} style={inp} />
-                <div className="asel-grid">
-                  <select className="ainp" value={level} onChange={e => setLevel(e.target.value)} style={{ ...inp, cursor: "pointer", color: level ? ink : muted }}>
-                    <option value="">{t("Current level","Hozirgi daraja")}</option>
-                    {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                  <select className="ainp" value={target} onChange={e => setTarget(e.target.value)} style={{ ...inp, cursor: "pointer", color: target ? ink : muted }}>
-                    <option value="">{t("Target band","Maqsad band")}</option>
-                    {TARGETS.map(b => <option key={b} value={b}>{b.toFixed(1)}</option>)}
-                  </select>
+          {/* ===== LOGIN (single step) ===== */}
+          {!isSignup && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input className="ainp" value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" style={inp} onKeyDown={(e) => e.key === "Enter" && submit()} />
+              <input className="ainp" value={pass} onChange={(e) => setPass(e.target.value)} type="password" placeholder={t("Password", "Parol")} style={inp} onKeyDown={(e) => e.key === "Enter" && submit()} />
+              {err && <p style={{ color: "#E03E2F", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{err}</p>}
+              <button className="asubmit" onClick={submit} disabled={busy}
+                style={{ marginTop: 4, border: "none", cursor: busy ? "default" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 13, color: "#fff", background: tabGrad, boxShadow: "0 10px 24px rgba(109,79,224,0.38)", transition: "transform .18s", opacity: busy ? 0.8 : 1, width: "100%" }}>
+                {busy ? t("Please wait…", "Kuting…") : t("Log in →", "Kirish →")}
+              </button>
+            </div>
+          )}
+
+          {/* ===== SIGNUP WIZARD (3 steps) ===== */}
+          {isSignup && (
+            <div>
+              {/* progress */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                {[1, 2, 3].map((s) => (
+                  <div key={s} style={{ flex: 1, height: 5, borderRadius: 999, background: s <= step ? tabGrad : "#F1EBFA", transition: "background .25s" }} />
+                ))}
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: muted, marginBottom: 14 }}>
+                {t(`Step ${step} of 3`, `${step}/3 qadam`)}
+              </div>
+
+              {step === 1 && (
+                <div className="astepwrap" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 8 }}>{t("Your gender", "Jinsingiz")}</div>
+                    <div className="asel-grid">
+                      <button type="button" onClick={() => setGender("male")} style={cardBtn(gender === "male")}>👨 {t("Male", "Erkak")}</button>
+                      <button type="button" onClick={() => setGender("female")} style={cardBtn(gender === "female")}>👩 {t("Female", "Ayol")}</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 8 }}>{t("Age range", "Yosh oralig'i")}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {AGE_RANGES.map((a) => (
+                        <button key={a} type="button" onClick={() => setAgeRange(a)} style={chipBtn(ageRange === a)}>{a}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                    <button type="button" onClick={nextStep} style={{ flex: 1, border: "none", background: "#F1EBFA", color: muted, fontFamily: "inherit", fontWeight: 700, fontSize: 13.5, padding: "12px", borderRadius: 11, cursor: "pointer" }}>{t("Skip", "O'tkazib yuborish")}</button>
+                    <button type="button" onClick={nextStep} style={{ flex: 2, border: "none", background: tabGrad, color: "#fff", fontFamily: "inherit", fontWeight: 800, fontSize: 14, padding: "12px", borderRadius: 11, cursor: "pointer", boxShadow: "0 8px 20px rgba(109,79,224,0.3)" }}>{t("Next →", "Keyingisi →")}</button>
+                  </div>
                 </div>
-              </>
-            )}
-            <input className="ainp" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email" style={inp} onKeyDown={e => e.key === "Enter" && submit()} />
-            <input className="ainp" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder={t("Password (min 6)","Parol (kamida 6)")} style={inp} onKeyDown={e => e.key === "Enter" && submit()} />
+              )}
 
-            {err && <p style={{ color: "#E03E2F", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{err}</p>}
-            {msg && <p style={{ color: "#1F9E73", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{msg}</p>}
+              {step === 2 && (
+                <div className="astepwrap" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 8 }}>{t("Current IELTS level", "Hozirgi IELTS darajangiz")}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {LEVELS.map((l) => (
+                        <button key={l} type="button" onClick={() => setLevel(l)} style={chipBtn(level === l)}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 8 }}>{t("Target band", "Maqsad band")}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {TARGETS.map((b) => (
+                        <button key={b} type="button" onClick={() => setTarget(String(b))} style={chipBtn(target === String(b))}>{b.toFixed(1)}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                    <button type="button" onClick={backStep} style={{ border: "none", background: "#F1EBFA", color: muted, fontFamily: "inherit", fontWeight: 700, fontSize: 13.5, padding: "12px 16px", borderRadius: 11, cursor: "pointer" }}>{t("← Back", "← Orqaga")}</button>
+                    <button type="button" onClick={nextStep} style={{ flex: 1, border: "none", background: "#F1EBFA", color: muted, fontFamily: "inherit", fontWeight: 700, fontSize: 13.5, padding: "12px", borderRadius: 11, cursor: "pointer" }}>{t("Skip", "O'tkazib yuborish")}</button>
+                    <button type="button" onClick={nextStep} style={{ flex: 2, border: "none", background: tabGrad, color: "#fff", fontFamily: "inherit", fontWeight: 800, fontSize: 14, padding: "12px", borderRadius: 11, cursor: "pointer", boxShadow: "0 8px 20px rgba(109,79,224,0.3)" }}>{t("Next →", "Keyingisi →")}</button>
+                  </div>
+                </div>
+              )}
 
-            <button className="asubmit" onClick={submit} disabled={busy}
-              style={{ marginTop: 4, border: "none", cursor: busy ? "default" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 13, color: "#fff", background: `linear-gradient(120deg,${coral},${orange})`, boxShadow: "0 10px 24px rgba(109,79,224,0.38)", transition: "transform .18s", opacity: busy ? 0.8 : 1, width: "100%" }}>
-              {busy ? t("Please wait…","Kuting…") : isSignup ? t("Create account","Hisob yaratish") : t("Log in →","Kirish →")}
-            </button>
-          </div>
+              {step === 3 && (
+                <div className="astepwrap" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: -2 }}>{t("Create your account", "Hisobingizni yarating")}</div>
+                  <input className="ainp" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Full name *", "To'liq ism *")} style={inp} />
+                  <input className="ainp" value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" placeholder={t("Phone number *", "Telefon raqam *")} style={inp} />
+                  <input className="ainp" value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email *" style={inp} onKeyDown={(e) => e.key === "Enter" && submit()} />
+                  <input className="ainp" value={pass} onChange={(e) => setPass(e.target.value)} type="password" placeholder={t("Password (min 6) *", "Parol (kamida 6) *")} style={inp} onKeyDown={(e) => e.key === "Enter" && submit()} />
+
+                  {err && <p style={{ color: "#E03E2F", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{err}</p>}
+                  {msg && <p style={{ color: "#1F9E73", fontSize: 13, margin: 0, lineHeight: 1.4 }}>{msg}</p>}
+
+                  <div style={{ display: "flex", gap: 10, marginTop: 2 }}>
+                    <button type="button" onClick={backStep} disabled={busy} style={{ border: "none", background: "#F1EBFA", color: muted, fontFamily: "inherit", fontWeight: 700, fontSize: 13.5, padding: "14px 16px", borderRadius: 13, cursor: busy ? "default" : "pointer" }}>{t("← Back", "← Orqaga")}</button>
+                    <button className="asubmit" type="button" onClick={submit} disabled={busy}
+                      style={{ flex: 1, border: "none", cursor: busy ? "default" : "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: 15, padding: 14, borderRadius: 13, color: "#fff", background: tabGrad, boxShadow: "0 10px 24px rgba(109,79,224,0.38)", transition: "transform .18s", opacity: busy ? 0.8 : 1 }}>
+                      {busy ? t("Please wait…", "Kuting…") : t("Create account", "Hisob yaratish")}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* bottom row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 20, flexWrap: "wrap" }}>
           {onBack && (
-            <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: muted, padding: "4px 0" }}>← {t("Home","Bosh sahifa")}</button>
+            <button onClick={onBack} style={{ border: "none", background: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: muted, padding: "4px 0" }}>← {t("Home", "Bosh sahifa")}</button>
           )}
           <div style={{ display: "flex", background: peach, borderRadius: 11, padding: 4, gap: 2 }}>
-            {[["en","EN"],["uz","UZ"]].map(([k,l]) => (
+            {[["en", "EN"], ["uz", "UZ"]].map(([k, l]) => (
               <button key={k} onClick={() => onLang(k)} style={{ border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13, padding: "6px 13px", borderRadius: 8, background: lang === k ? ink : "transparent", color: lang === k ? "#fff" : muted, transition: "all .2s" }}>{l}</button>
             ))}
           </div>
