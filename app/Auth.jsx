@@ -29,24 +29,16 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
-  const advanceTimer = useRef(null);
-
-  useEffect(() => () => { if (advanceTimer.current) clearTimeout(advanceTimer.current); }, []);
+  const [step1Err, setStep1Err] = useState("");
+  const [step2Err, setStep2Err] = useState("");
 
   function switchMode(m) {
-    setMode(m); setStep(1); setDir(1); setErr(""); setMsg("");
-    if (advanceTimer.current) clearTimeout(advanceTimer.current);
+    setMode(m); setStep(1); setDir(1); setErr(""); setMsg(""); setStep1Err(""); setStep2Err("");
   }
   function goStep(n, d) {
-    if (advanceTimer.current) clearTimeout(advanceTimer.current);
     setDir(d); setStep(n);
   }
-  function scheduleAdvance(n) {
-    if (advanceTimer.current) clearTimeout(advanceTimer.current);
-    advanceTimer.current = setTimeout(function () { setDir(1); setStep(n); }, 250);
-  }
-  function skipStep1() { setGender(""); setAgeRange(""); goStep(2, 1); }
-  function skipStep2() { setLevel(""); setTarget(""); goStep(3, 1); }
+
 
   async function submitLogin() {
     setErr(""); setMsg("");
@@ -128,8 +120,6 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
         ".alevel-card.active{border-color:#6D4FE0;box-shadow:0 0 0 3px rgba(109,79,224,0.14);background:#fff;color:#5636C7}" +
         ".achip{border:1.5px solid rgba(36,30,51,0.14);background:#FDFCFF;border-radius:999px;padding:8px 14px;font-family:inherit;font-size:12.5px;font-weight:700;color:" + muted + ";cursor:pointer;transition:all .15s ease}" +
         ".achip.active{background:" + tabGrad + ";color:#fff;border-color:transparent;box-shadow:0 6px 16px rgba(109,79,224,0.3)}" +
-        ".askip{border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;color:" + muted + ";padding:6px 2px}" +
-        ".askip:hover{color:" + ink + "}" +
         ".aback{border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;color:" + muted + ";padding:6px 2px;display:flex;align-items:center;gap:4px}" +
         ".aback:hover{color:" + ink + "}" +
         ".anext{border:none;cursor:pointer;font-family:inherit;font-weight:800;font-size:14px;padding:12px 22px;border-radius:12px;color:#fff;background:" + tabGrad + ";box-shadow:0 8px 20px rgba(109,79,224,0.32);transition:transform .18s}" +
@@ -192,25 +182,29 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
               <p style={{ margin: "0 0 16px", fontSize: 13, color: muted, lineHeight: 1.5 }}>{t("Helps us personalize your coaching.", "Bu murabbiylikni sizga moslashtirishga yordam beradi.")}</p>
 
               <div className="asel-grid" style={{ marginBottom: 16 }}>
-                <button type="button" className={"asel-card" + (gender === "male" ? " active" : "")} onClick={function () { setGender("male"); scheduleAdvance(2); }}>
+                <button type="button" className={"asel-card" + (gender === "male" ? " active" : "")} onClick={function () { setGender("male"); }}>
                   <span className="aicon">{"\uD83D\uDC68"}</span><span className="alabel">{t("Male", "Erkak")}</span>
                 </button>
-                <button type="button" className={"asel-card" + (gender === "female" ? " active" : "")} onClick={function () { setGender("female"); scheduleAdvance(2); }}>
+                <button type="button" className={"asel-card" + (gender === "female" ? " active" : "")} onClick={function () { setGender("female"); }}>
                   <span className="aicon">{"\uD83D\uDC69"}</span><span className="alabel">{t("Female", "Ayol")}</span>
                 </button>
               </div>
 
-              <div style={{ fontSize: 12, fontWeight: 700, color: muted, marginBottom: 8 }}>{t("Age range (optional)", "Yosh oralig'i (ixtiyoriy)")}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: muted, marginBottom: 8 }}>{t("Age range", "Yosh oralig'i")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {AGE_RANGES.map(function (a) {
                   var k = a[0], en = a[1], uz = a[2];
-                  return <button type="button" key={k} className={"achip" + (ageRange === k ? " active" : "")} onClick={function () { setAgeRange(k); scheduleAdvance(2); }}>{t(en, uz)}</button>;
+                  return <button type="button" key={k} className={"achip" + (ageRange === k ? " active" : "")} onClick={function () { setAgeRange(k); }}>{t(en, uz)}</button>;
                 })}
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <button type="button" className="askip" onClick={skipStep1}>{t("Skip", "O'tkazib yuborish")}</button>
-                <button type="button" className="anext" onClick={function () { goStep(2, 1); }}>{t("Next \u2192", "Keyingi \u2192")}</button>
+              {step1Err && <p style={{ color: "#E03E2F", fontSize: 13, margin: "0 0 14px", lineHeight: 1.4 }}>{step1Err}</p>}
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                <button type="button" className="anext" onClick={function () {
+                  if (!gender || !ageRange) { setStep1Err(t("Please choose both gender and age range.", "Iltimos, jins va yosh oralig'ini tanlang.")); return; }
+                  setStep1Err(""); goStep(2, 1);
+                }}>{t("Next \u2192", "Keyingi \u2192")}</button>
               </div>
             </div>
           )}
@@ -223,23 +217,25 @@ export default function Auth({ lang, onLang, initialMode, onBack }) {
               <div style={{ fontSize: 12, fontWeight: 700, color: muted, marginBottom: 8 }}>{t("Current level", "Hozirgi daraja")}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 18 }}>
                 {LEVELS.map(function (l) {
-                  return <button type="button" key={l} className={"alevel-card" + (level === l ? " active" : "")} onClick={function () { setLevel(l); scheduleAdvance(3); }}>{l}</button>;
+                  return <button type="button" key={l} className={"alevel-card" + (level === l ? " active" : "")} onClick={function () { setLevel(l); }}>{l}</button>;
                 })}
               </div>
 
-              <div style={{ fontSize: 12, fontWeight: 700, color: muted, marginBottom: 8 }}>{t("Target band (optional)", "Maqsad band (ixtiyoriy)")}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: muted, marginBottom: 8 }}>{t("Target band", "Maqsad band")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {TARGETS.map(function (b) {
-                  return <button type="button" key={b} className={"achip" + (target === String(b) ? " active" : "")} onClick={function () { setTarget(String(b)); scheduleAdvance(3); }}>{b.toFixed(1)}</button>;
+                  return <button type="button" key={b} className={"achip" + (target === String(b) ? " active" : "")} onClick={function () { setTarget(String(b)); }}>{b.toFixed(1)}</button>;
                 })}
               </div>
+
+              {step2Err && <p style={{ color: "#E03E2F", fontSize: 13, margin: "0 0 14px", lineHeight: 1.4 }}>{step2Err}</p>}
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <button type="button" className="aback" onClick={function () { goStep(1, -1); }}>{"\u2190 " + t("Back", "Orqaga")}</button>
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <button type="button" className="askip" onClick={skipStep2}>{t("Skip", "O'tkazib yuborish")}</button>
-                  <button type="button" className="anext" onClick={function () { goStep(3, 1); }}>{t("Next \u2192", "Keyingi \u2192")}</button>
-                </div>
+                <button type="button" className="anext" onClick={function () {
+                  if (!level || !target) { setStep2Err(t("Please choose both your level and target band.", "Iltimos, darajangiz va maqsad bandni tanlang.")); return; }
+                  setStep2Err(""); goStep(3, 1);
+                }}>{t("Next \u2192", "Keyingi \u2192")}</button>
               </div>
             </div>
           )}
