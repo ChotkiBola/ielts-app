@@ -11,7 +11,7 @@ const V = {
   promptText: "var(--prompt-text)", track: "var(--track)", bg: "var(--app-bg)",
 };
 const GRAD = "linear-gradient(120deg,var(--accent),var(--accent2))";
-const serif = "'Fraunces', 'DM Serif Display', serif";
+const serif = "'DM Serif Display', serif";
 const btn = function (extra) {
   extra = extra || {};
   var base = { cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease" };
@@ -157,7 +157,7 @@ export default function Speaking(props) {
         var sess = resp && resp.data && resp.data.session;
         if (!sess || !sess.user) { callback(null); return; }
         var uid = sess.user.id;
-        var path = uid + "/" + Date.now() + ".webm";
+        var path = "speaking-audio/" + uid + "/" + Date.now() + ".webm";
         supabase.storage.from("speaking-audio").upload(path, blob, { contentType: "audio/webm", upsert: false })
           .then(function (res) {
             if (res.error) { throw new Error(res.error.message || "upload-failed"); }
@@ -395,14 +395,18 @@ export default function Speaking(props) {
         setStage("error");
         return;
       }
+      var speakHeaders = { "Content-Type": "application/json" };
+      if (accessToken) speakHeaders["Authorization"] = "Bearer " + accessToken;
       fetch("/api/score", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: speakHeaders,
         body: JSON.stringify({ mode: "speakScore", transcript: transcript, lang: lang, password: accessCode }),
       })
-        .then(function (r) { return r.json(); })
-        .then(function (r) {
+        .then(function (r) { return r.json().then(function (data) { return { status: r.status, data: data }; }); })
+        .then(function (res) {
+          var r = res.data;
           if (r.needPassword) { if (onNeedCode) onNeedCode(); setStage("idle"); return; }
+          if (res.status === 402 && r.limitReached) { if (onLimitReached) onLimitReached(r); setStage("idle"); return; }
           if (r.error) { setErr(r.error); setStage("error"); return; }
           setResult(r);
           setAudioUrl(recUrl || null);
@@ -455,7 +459,7 @@ export default function Speaking(props) {
           })}
         </div>
         {err ? <p style={{ color: V.bad, fontSize: 13, textAlign: "center", marginBottom: 10 }}>{err}</p> : null}
-        <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(109,79,224,0.35)" })}>
+        <button onClick={start} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(255,106,77,0.35)" })}>
           {"\uD83C\uDFA4"} {t("Start the interview \u2192", "Suhbatni boshlash \u2192")}
         </button>
         <p style={{ fontSize: 11.5, color: V.faint, textAlign: "center", marginTop: 10 }}>
@@ -507,7 +511,7 @@ export default function Speaking(props) {
 
         {/* Feature A: Part 2 prep timer cue card overlay */}
         {prepActive ? (
-          <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, width: 292, background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, boxShadow: "0 20px 50px rgba(36,30,51,0.22)", animation: "cardIn .3s ease both" }}>
+          <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, width: 292, background: V.surface, border: "1px solid " + V.border, borderRadius: 18, padding: 18, boxShadow: "0 20px 50px rgba(42,33,30,0.22)", animation: "cardIn .3s ease both" }}>
             {prepSecs === 0 ? (
               <div style={{ textAlign: "center", padding: "14px 0" }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>{"\uD83C\uDFA4"}</div>
@@ -739,7 +743,7 @@ export default function Speaking(props) {
         ) : null}
 
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); setAudioUrl(null); setPrepActive(false); setPrepSecs(60); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(109,79,224,0.3)" })}>
+          <button onClick={function () { setStage("idle"); setResult(null); setLines([]); setShowTranscript(false); setAudioUrl(null); setPrepActive(false); setPrepSecs(60); }} style={btn({ flex: 1, padding: "13px", borderRadius: 12, background: GRAD, color: "#fff", fontSize: 14, boxShadow: "0 8px 20px rgba(255,106,77,0.3)" })}>
             {"\u21BB"} {t("New interview", "Yangi suhbat")}
           </button>
         </div>

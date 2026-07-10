@@ -9,6 +9,7 @@ import Speaking from "./Speaking";
 import Reading from "./Reading";
 import Listening from "./Listening";
 import Logo from "./Logo";
+import VocabChallenge from "./VocabChallenge";
 import { supabase, hasSupabase } from "./lib/supabase";
 
 // CSS-variable palette (tokens live in globals.css .app-root)
@@ -199,6 +200,8 @@ export default function Home() {
   const [gapChecking, setGapChecking] = useState(false);
   const [gapResult, setGapResult] = useState(null);
   const [gapGoodCount, setGapGoodCount] = useState(0);
+  const [vcOpen, setVcOpen] = useState(false);
+  const [vcJoinRoom, setVcJoinRoom] = useState(null);
   const restored = useRef(false);
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
@@ -246,6 +249,17 @@ export default function Home() {
     try { const th = localStorage.getItem(THEME_KEY); if (th === "dark" || th === "light") setTheme(th); } catch (e) {}
     try { const tg = localStorage.getItem(TARGET_KEY); if (tg) setTargetBand(Number(tg)); } catch (e) {}
     try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const o = JSON.parse(d); if (o.taskType && TASKS[o.taskType]) { setTaskType(o.taskType); setQIndex(o.qIndex || 0); setEssay(o.essay || ""); setSecondsLeft(TASKS[o.taskType].minutes * 60); } } } catch (e) {}
+    // Vocab Challenge invite link: /?vocabRoom=<id> auto-opens the challenge and joins the room
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const vr = params.get("vocabRoom");
+      if (vr) {
+        setVcJoinRoom(vr); setVcOpen(true); setTab("vocab"); setPMode(null);
+        params.delete("vocabRoom");
+        const rest = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (rest ? "?" + rest : ""));
+      }
+    } catch (e) {}
     restored.current = true;
   }, []);
   useEffect(() => { if (!restored.current) return; try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ taskType, qIndex, essay })); } catch (e) {} }, [taskType, qIndex, essay]);
@@ -748,9 +762,25 @@ export default function Home() {
           </div>
         )}
 
-        {tab === "vocab" && !pMode && (
+        {tab === "vocab" && !pMode && vcOpen && (
+          <VocabChallenge
+            lang={lang}
+            session={session}
+            displayName={(profile && profile.full_name) || (session && session.user && session.user.email ? session.user.email.split("@")[0] : t("Player", "O'yinchi"))}
+            joinRoomId={vcJoinRoom}
+            onExit={() => { setVcOpen(false); setVcJoinRoom(null); }}
+          />
+        )}
+
+        {tab === "vocab" && !pMode && !vcOpen && (
           <div className="anim">
-            <button onClick={() => setPMode("config")} style={btn({ width: "100%", marginBottom: 16, padding: "15px", borderRadius: 16, background: V.promptBg, color: V.promptText, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: V.shadow })}>🎴 {t("Practice flashcards", "Kartochka mashqi")}</button>
+            <div className="work-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <button onClick={() => { if (!hasSupabase || !session) return; setVcOpen(true); }} disabled={hasSupabase && !session}
+                style={btn({ padding: "15px", borderRadius: 16, background: GRAD, color: "#fff", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 10px 26px rgba(109,79,224,0.3)", opacity: hasSupabase && !session ? 0.6 : 1 })}>
+                ⚔️ {t("Vocab Challenge", "Lug'at bellashuvi")}<span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: 99 }}>LIVE</span>
+              </button>
+              <button onClick={() => setPMode("config")} style={btn({ padding: "15px", borderRadius: 16, background: V.promptBg, color: V.promptText, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: V.shadow })}>🎴 {t("Practice flashcards", "Kartochka mashqi")}</button>
+            </div>
             <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 17, marginBottom: 18, boxShadow: "0 6px 22px rgba(42,33,30,0.05)" }}>
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={vq} onChange={(e) => setVq(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchVocab(); }} placeholder={t("Search any English word…", "Istalgan inglizcha so'zni qidiring…")} style={{ flex: 1, padding: "12px 15px", border: `1px solid ${V.border}`, borderRadius: 11, fontSize: 15, outline: "none", color: V.text, background: V.surface }} />
