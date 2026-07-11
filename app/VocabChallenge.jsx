@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { CHALLENGE_WORDS } from "./VocabChallengeData";
 import { supabase } from "./lib/supabase";
+import VocabFriends from "./VocabFriends";
 
 // ── shared visual language (mirrors page.jsx tokens) ──
 const V = {
@@ -37,7 +38,8 @@ function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const
 const WORD_BY_KEY = Object.fromEntries(CHALLENGE_WORDS.map((w) => [w.word, w]));
 
 // Host builds the shared question set once; stored in vocab_rooms.questions.
-function buildQuestions() {
+// Exported so VocabFriends can build an identical set when challenging a friend directly.
+export function buildQuestions() {
   const picks = shuffle(CHALLENGE_WORDS).slice(0, QUESTION_COUNT);
   const types = shuffle([
     ...Array(7).fill("define"), ...Array(7).fill("gap"), ...Array(QUESTION_COUNT - 14).fill("translate"),
@@ -121,9 +123,10 @@ function TimerRing({ fraction }) {
   );
 }
 
-export default function VocabChallenge({ lang = "en", session, displayName, joinRoomId, onExit }) {
+export default function VocabChallenge({ lang = "en", session, displayName, myLevel, joinRoomId, initialView, onExit }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const myId = session && session.user ? session.user.id : null;
+  const level = myLevel || "Not sure";
 
   const [room, setRoom] = useState(null);
   const [players, setPlayers] = useState([]);
@@ -140,10 +143,16 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
   const [myDone, setMyDone] = useState(false);
   const [opp, setOpp] = useState(null); // { userId, qIdx, score, done } via broadcast
 
+  const [view, setView] = useState(initialView === "friends" ? "friends" : "entry");
+  const [mmSearching, setMmSearching] = useState(false);
+  const [invites, setInvites] = useState([]); // pending vocab_challenge_invites addressed to me
+  const [inviteNames, setInviteNames] = useState({}); // from_user -> display_name, resolved via vocab_room_players
+
   const bcRef = useRef(null);
   const qStartRef = useRef(0);
   const advanceRef = useRef(null);
   const flippedRef = useRef(false);
+  const mmSearchingRef = useRef(false);
 
   const roomId = room ? room.id : null;
 
@@ -192,20 +201,29 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
     };
   }, [roomId, myId, fetchPlayers]);
 
+  // shared "join an existing room by id" logic — used by link-join, friend-invite accept, and matchmaking
+  const loadRoom = useCallback(async (roomIdToLoad, { insertSelfIfMissing = false } = {}) => {
+    const { data: r, error } = await supabase.from("vocab_rooms").select("*").eq("id", roomIdToLoad).single();
+    if (error || !r) return { error: t("Room not found. Ask your friend for a new link.", "Xona topilmadi. Do'stingizdan yangi havola so'rang.") };
+    if (insertSelfIfMissing) {
+      const { data: existing } = await supabase.from("vocab_room_players").select("*").eq("room_id", r.id);
+      const mine = (existing || []).find((p) => p.user_id === myId);
+      if (!mine) {
+        if ((existing || []).length >= 2) return { error: t("This room is already full.", "Bu xona allaqachon to'lgan.") };
+        if (r.status !== "waiting") return { error: t("This match has already started.", "Bu o'yin allaqachon boshlangan.") };
+        await supabase.from("vocab_room_players").insert({ room_id: r.id, user_id: myId, display_name: displayName });
+      }
+    }
+    return { room: r };
+  }, [myId, displayName]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── auto-join via shared link ──
   useEffect(() => {
     if (!joinRoomId || !myId || room) return;
     (async () => {
       setBusy(true); setErrMsg("");
-      const { data: r, error } = await supabase.from("vocab_rooms").select("*").eq("id", joinRoomId).single();
-      if (error || !r) { setErrMsg(t("Room not found. Ask your friend for a new link.", "Xona topilmadi. Do'stingizdan yangi havola so'rang.")); setBusy(false); return; }
-      const { data: existing } = await supabase.from("vocab_room_players").select("*").eq("room_id", r.id);
-      const mine = (existing || []).find((p) => p.user_id === myId);
-      if (!mine) {
-        if ((existing || []).length >= 2) { setErrMsg(t("This room is already full.", "Bu xona allaqachon to'lgan.")); setBusy(false); return; }
-        if (r.status !== "waiting") { setErrMsg(t("This match has already started.", "Bu o'yin allaqachon boshlangan.")); setBusy(false); return; }
-        await supabase.from("vocab_room_players").insert({ room_id: r.id, user_id: myId, display_name: displayName });
-      }
+      const { room: r, error } = await loadRoom(joinRoomId, { insertSelfIfMissing: true });
+      if (error) { setErrMsg(error); setBusy(false); return; }
       setRoom(r); setBusy(false);
     })();
   }, [joinRoomId, myId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -218,6 +236,103 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
     if (error || !r) { setErrMsg(t("Could not create a room. Check that the challenge tables exist.", "Xona yaratib bo'lmadi. Jadval mavjudligini tekshiring.")); setBusy(false); return; }
     await supabase.from("vocab_room_players").insert({ room_id: r.id, user_id: myId, display_name: displayName });
     setRoom(r); setBusy(false);
+  }
+
+  // ── Quick Match: join the level queue, try to pair instantly, else wait for someone else's match ──
+  async function quickMatch() {
+    if (!myId) return;
+    setBusy(true); setErrMsg("");
+    const { error: qErr } = await supabase.from("vocab_matchmaking_queue").upsert({ user_id: myId, display_name: displayName, level }, { onConflict: "user_id" });
+    if (qErr) { setErrMsg(t("Could not join matchmaking. Please try again.", "Moslashtirish navbatiga qo'shilib bo'lmadi. Qaytadan urining.")); setBusy(false); return; }
+    const { data: matchedRoomId, error: rpcErr } = await supabase.rpc("vocab_try_match", { p_user_id: myId, p_level: level });
+    if (rpcErr) { setErrMsg(t("Matchmaking failed. Please try again.", "Moslashtirish xato berdi. Qaytadan urining.")); setBusy(false); return; }
+    if (matchedRoomId) {
+      // vocab_try_match seeds the room with questions:[] (Postgres has no access to the word
+      // bank) — the client that actually landed the match fills in the real question set. The
+      // opponent's already-open vocab_rooms subscription (see loadRoom / the DB-changes effect)
+      // will pick up this follow-up UPDATE via Realtime once it lands.
+      const questions = buildQuestions();
+      await supabase.from("vocab_rooms").update({ questions }).eq("id", matchedRoomId);
+      const { room: r, error } = await loadRoom(matchedRoomId);
+      if (r) setRoom(r); else setErrMsg(error);
+      setBusy(false);
+      return;
+    }
+    setMmSearching(true); setBusy(false);
+  }
+
+  async function cancelMatchmaking() {
+    setMmSearching(false);
+    if (myId) await supabase.from("vocab_matchmaking_queue").delete().eq("user_id", myId);
+  }
+
+  useEffect(() => { mmSearchingRef.current = mmSearching; }, [mmSearching]);
+  // CRITICAL: if the player navigates away while still searching, don't leave a ghost queue row behind
+  useEffect(() => {
+    return () => {
+      if (mmSearchingRef.current && myId) supabase.from("vocab_matchmaking_queue").delete().eq("user_id", myId).then(() => {});
+    };
+  }, [myId]);
+
+  // while searching: realtime (instant) + a light poll fallback (covers the race where the match
+  // lands just before our subscription is fully established)
+  useEffect(() => {
+    if (!mmSearching || !myId) return;
+    let stopped = false;
+    const tryClaim = async (rid) => {
+      if (stopped) return;
+      const { room: r } = await loadRoom(rid);
+      if (r && !stopped) { stopped = true; setRoom(r); setMmSearching(false); }
+    };
+    const ch = supabase
+      .channel(`vc-mm-${myId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "vocab_room_players", filter: `user_id=eq.${myId}` }, (payload) => {
+        if (payload.new && payload.new.room_id) tryClaim(payload.new.room_id);
+      })
+      .subscribe();
+    const poll = setInterval(async () => {
+      if (stopped) return;
+      const { data } = await supabase.from("vocab_room_players").select("room_id").eq("user_id", myId).order("joined_at", { ascending: false }).limit(1);
+      if (data && data[0]) tryClaim(data[0].room_id);
+    }, 3000);
+    return () => { stopped = true; supabase.removeChannel(ch); clearInterval(poll); };
+  }, [mmSearching, myId, loadRoom]);
+
+  // ── friend-challenge invites addressed to me ──
+  useEffect(() => {
+    if (!myId || room) { setInvites([]); return; }
+    let cancelled = false;
+    async function refresh() {
+      const { data } = await supabase.from("vocab_challenge_invites").select("*").eq("to_user", myId).eq("status", "pending").order("created_at", { ascending: false });
+      if (cancelled) return;
+      setInvites(data || []);
+      const roomIds = (data || []).map((i) => i.room_id);
+      if (roomIds.length) {
+        const { data: pls } = await supabase.from("vocab_room_players").select("room_id,user_id,display_name").in("room_id", roomIds);
+        const map = {};
+        (pls || []).forEach((p) => { map[`${p.room_id}:${p.user_id}`] = p.display_name; });
+        if (!cancelled) setInviteNames(map);
+      }
+    }
+    refresh();
+    const ch = supabase
+      .channel(`vc-invites-${myId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "vocab_challenge_invites", filter: `to_user=eq.${myId}` }, refresh)
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(ch); };
+  }, [myId, room]);
+
+  async function acceptInvite(inv) {
+    setBusy(true); setErrMsg("");
+    const { room: r, error } = await loadRoom(inv.room_id);
+    if (error) { setErrMsg(error); setBusy(false); return; }
+    await supabase.from("vocab_challenge_invites").update({ status: "accepted" }).eq("id", inv.id);
+    setRoom(r); setBusy(false);
+  }
+  async function declineInvite(inv) {
+    await supabase.from("vocab_challenge_invites").update({ status: "declined" }).eq("id", inv.id);
+    if (myId) await supabase.from("vocab_room_players").delete().eq("room_id", inv.room_id).eq("user_id", myId);
+    setInvites((list) => list.filter((x) => x.id !== inv.id));
   }
 
   async function setReady() {
@@ -306,20 +421,68 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
     <button onClick={onExit} style={btn({ background: "transparent", color: V.muted, fontSize: 13, padding: "6px 2px" })}>← {t("Back to Vocab", "Lug'atga qaytish")}</button>
   );
 
-  // ════════ SCREEN 1 — ENTRY ════════
+  // ════════ SCREEN 1 — ENTRY (and its sub-views) ════════
   if (!room) {
+    if (view === "friends") {
+      return (
+        <VocabFriends
+          lang={lang} myId={myId} displayName={displayName}
+          onBack={() => setView("entry")}
+          onChallengeCreated={(r) => { setRoom(r); setView("entry"); }}
+        />
+      );
+    }
+
+    if (mmSearching) {
+      return (
+        <div className="anim" style={{ maxWidth: 440, margin: "50px auto", textAlign: "center" }}>
+          {backBtn}
+          <div style={{ marginTop: 30 }}>
+            <div style={{ width: 74, height: 74, borderRadius: "50%", background: V.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 30, animation: "pulseRing 1.8s ease-in-out infinite" }}>🎲</div>
+            <h3 style={{ fontFamily: serif, fontSize: 20, color: V.text, margin: "0 0 6px" }}>{t("Searching for an opponent…", "Raqib qidirilmoqda…")}</h3>
+            <p style={{ fontSize: 13.5, color: V.muted, margin: "0 0 22px" }}>{t(`Matching you with players at: ${level}`, `Siz bilan mos daraja: ${level}`)}</p>
+            <button onClick={cancelMatchmaking} style={btn({ padding: "12px 24px", borderRadius: 12, background: V.surface, border: `1px solid ${V.border}`, color: V.muted, fontSize: 13.5 })}>
+              {t("Cancel", "Bekor qilish")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="anim" style={{ maxWidth: 480, margin: "10px auto" }}>
-        {backBtn}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          {backBtn}
+          <button onClick={() => setView("friends")} style={btn({ background: "transparent", color: V.accent, fontSize: 13, padding: "6px 2px" })}>👥 {t("Friends", "Do'stlar")}</button>
+        </div>
+
+        {invites.length > 0 && invites.map((inv) => (
+          <div key={inv.id} className="cardin" style={{ background: "var(--gold-soft, rgba(184,127,46,0.12))", border: "1px solid var(--gold, #B87F2E)", borderRadius: 16, padding: "14px 16px", marginTop: 10 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: V.text, marginBottom: 10 }}>
+              🔥 {t(`${inviteNames[`${inv.room_id}:${inv.from_user}`] || "A friend"} challenged you!`, `${inviteNames[`${inv.room_id}:${inv.from_user}`] || "Do'stingiz"} sizni bellashuvga chaqirdi!`)}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => acceptInvite(inv)} disabled={busy} style={btn({ flex: 1, padding: "10px", borderRadius: 10, background: GRAD, color: "#fff", fontSize: 13 })}>{t("Accept →", "Qabul qilish →")}</button>
+              <button onClick={() => declineInvite(inv)} style={btn({ flex: 1, padding: "10px", borderRadius: 10, background: V.surface, border: `1px solid ${V.border}`, color: V.muted, fontSize: 13 })}>{t("Decline", "Rad etish")}</button>
+            </div>
+          </div>
+        ))}
+
         <div style={{ background: V.promptBg, color: V.promptText, borderRadius: 22, padding: "30px 26px", textAlign: "center", boxShadow: V.shadow, marginTop: 10 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>⚔️</div>
           <h2 style={{ fontFamily: serif, fontSize: 26, margin: "0 0 6px" }}>{t("Vocab Challenge", "Lug'at bellashuvi")}</h2>
           <p style={{ fontSize: 13.5, opacity: 0.75, lineHeight: 1.6, margin: "0 0 22px" }}>
-            {t("20 questions. 12 seconds each. Fastest correct answer wins the round — invite a friend and settle it live.", "20 ta savol. Har biriga 12 soniya. Eng tez to'g'ri javob g'olib — do'stingizni chaqiring va jonli bellashing.")}
+            {t("20 questions. 12 seconds each. Fastest correct answer wins the round.", "20 ta savol. Har biriga 12 soniya. Eng tez to'g'ri javob g'olib.")}
           </p>
-          <button onClick={createRoom} disabled={busy || !myId} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(109,79,224,0.35)", opacity: busy || !myId ? 0.7 : 1 })}>
-            {busy ? t("Creating…", "Yaratilmoqda…") : t("Create a room →", "Xona yaratish →")}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <button onClick={quickMatch} disabled={busy || !myId} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(109,79,224,0.35)", opacity: busy || !myId ? 0.7 : 1 })}>
+              🎲 {busy ? t("Finding a match…", "Moslashtirilmoqda…") : t("Quick match (same level)", "Tez moslashtirish (bir xil daraja)")}
+            </button>
+            <div style={{ fontSize: 11.5, opacity: 0.65, marginTop: -4 }}>{t(`Matching you with players at: ${level}`, `Siz bilan mos daraja: ${level}`)}</div>
+            <button onClick={createRoom} disabled={busy || !myId} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: "rgba(255,255,255,0.10)", border: "1.5px solid rgba(255,255,255,0.22)", color: "#fff", fontSize: 15 })}>
+              {t("Create a room →", "Xona yaratish →")}
+            </button>
+          </div>
           {!myId && <p style={{ fontSize: 12, color: "#FFD9A0", margin: "10px 0 0" }}>{t("Sign in to play live matches.", "Jonli o'yin uchun tizimga kiring.")}</p>}
           <p style={{ fontSize: 12, opacity: 0.55, margin: "14px 0 0" }}>
             {t("Got a link from a friend? Just open it — you'll join automatically.", "Do'stingizdan havola oldingizmi? Uni oching — avtomatik qo'shilasiz.")}

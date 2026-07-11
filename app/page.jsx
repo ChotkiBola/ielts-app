@@ -202,6 +202,8 @@ export default function Home() {
   const [gapGoodCount, setGapGoodCount] = useState(0);
   const [vcOpen, setVcOpen] = useState(false);
   const [vcJoinRoom, setVcJoinRoom] = useState(null);
+  const [vcInitialView, setVcInitialView] = useState("entry");
+  const [vcInviteCount, setVcInviteCount] = useState(0);
   const restored = useRef(false);
 
   const t = (en, uz) => (lang === "uz" ? uz : en);
@@ -242,6 +244,22 @@ export default function Home() {
     if (!hasSupabase || !session) { setProfile(null); return; }
     supabase.from("profiles").select("*").eq("user_id", session.user.id).single()
       .then(({ data }) => { if (data) setProfile(data); });
+  }, [session]);
+
+  // pending Vocab Challenge invites → small badge on the nav card, kept live via Realtime
+  useEffect(() => {
+    if (!hasSupabase || !session) { setVcInviteCount(0); return; }
+    let active = true;
+    async function refreshInvites() {
+      const { count } = await supabase.from("vocab_challenge_invites").select("id", { count: "exact", head: true }).eq("to_user", session.user.id).eq("status", "pending");
+      if (active) setVcInviteCount(count || 0);
+    }
+    refreshInvites();
+    const ch = supabase
+      .channel(`vc-invite-badge-${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "vocab_challenge_invites", filter: `to_user=eq.${session.user.id}` }, refreshInvites)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(ch); };
   }, [session]);
 
   useEffect(() => {
@@ -767,17 +785,24 @@ export default function Home() {
             lang={lang}
             session={session}
             displayName={(profile && profile.full_name) || (session && session.user && session.user.email ? session.user.email.split("@")[0] : t("Player", "O'yinchi"))}
+            myLevel={(profile && profile.level) || "Not sure"}
             joinRoomId={vcJoinRoom}
-            onExit={() => { setVcOpen(false); setVcJoinRoom(null); }}
+            initialView={vcInitialView}
+            onExit={() => { setVcOpen(false); setVcJoinRoom(null); setVcInitialView("entry"); }}
           />
         )}
 
         {tab === "vocab" && !pMode && !vcOpen && (
           <div className="anim">
             <div className="work-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <button onClick={() => { if (!hasSupabase || !session) return; setVcOpen(true); }} disabled={hasSupabase && !session}
-                style={btn({ padding: "15px", borderRadius: 16, background: GRAD, color: "#fff", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 10px 26px rgba(109,79,224,0.3)", opacity: hasSupabase && !session ? 0.6 : 1 })}>
+              <button onClick={() => { if (!hasSupabase || !session) return; setVcInitialView("entry"); setVcOpen(true); }} disabled={hasSupabase && !session}
+                style={btn({ position: "relative", padding: "15px", borderRadius: 16, background: GRAD, color: "#fff", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 10px 26px rgba(109,79,224,0.3)", opacity: hasSupabase && !session ? 0.6 : 1 })}>
                 ⚔️ {t("Vocab Challenge", "Lug'at bellashuvi")}<span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: 99 }}>LIVE</span>
+                {vcInviteCount > 0 && (
+                  <span style={{ position: "absolute", top: -6, right: -6, minWidth: 20, height: 20, padding: "0 5px", borderRadius: 99, background: "var(--bad)", color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--app-bg)" }}>
+                    {vcInviteCount}
+                  </span>
+                )}
               </button>
               <button onClick={() => setPMode("config")} style={btn({ padding: "15px", borderRadius: 16, background: V.promptBg, color: V.promptText, fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: V.shadow })}>🎴 {t("Practice flashcards", "Kartochka mashqi")}</button>
             </div>
@@ -997,8 +1022,14 @@ export default function Home() {
               <div style={{ fontSize: 12.5, color: V.muted, marginTop: 4 }}>{t("Coming soon: upload your own exam questions.", "Tez orada: o'zingizning savollaringizni yuklang.")}</div>
             </div>
 
+            {hasSupabase && session && (
+              <button onClick={() => { setTab("vocab"); setPMode(null); setVcInitialView("friends"); setVcOpen(true); }} style={btn({ width: "100%", marginBottom: 12, background: V.surface, border: `1px solid ${V.border}`, color: V.text, padding: "13px", borderRadius: 12, fontSize: 13.5, position: "relative" })}>
+                👥 {t("My friends", "Mening do'stlarim")}
+                {vcInviteCount > 0 && <span style={{ marginLeft: 8, display: "inline-flex", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 99, background: "var(--bad)", color: "#fff", fontSize: 10.5, fontWeight: 800, alignItems: "center", justifyContent: "center" }}>{vcInviteCount}</span>}
+              </button>
+            )}
             {isAdmin && (
-              <button onClick={() => setTab("admin")} style={btn({ width: "100%", marginBottom: 12, background: V.surface, border: `1px solid ${V.border}`, color: V.text, padding: "13px", borderRadius: 12, fontSize: 13.5 })}>👥 {t("Open admin panel", "Admin panelni ochish")}</button>
+              <button onClick={() => setTab("admin")} style={btn({ width: "100%", marginBottom: 12, background: V.surface, border: `1px solid ${V.border}`, color: V.text, padding: "13px", borderRadius: 12, fontSize: 13.5 })}>🛠 {t("Open admin panel", "Admin panelni ochish")}</button>
             )}
             {hasSupabase && session && (
               <button onClick={logout} style={btn({ width: "100%", background: "transparent", color: V.bad, padding: "12px", borderRadius: 12, fontSize: 13.5, border: `1px solid ${V.border}` })}>{t("Log out", "Chiqish")}</button>
