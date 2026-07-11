@@ -276,7 +276,7 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
     const correct = i === q.correct;
     const gained = correct ? BASE_POINTS + Math.round(SPEED_BONUS * remainFrac) : 0;
     const newScore = score + gained;
-    setPicked(i); setScore(newScore);
+    setPicked(i === -1 ? -2 : i); setScore(newScore); // -2 = timed out: reveal answer without marking a pick
     broadcast({ qIdx: qIdx + 1, score: newScore, done: qIdx + 1 >= questions.length });
     advanceRef.current = setTimeout(() => {
       flippedRef.current = false;
@@ -317,9 +317,10 @@ export default function VocabChallenge({ lang = "en", session, displayName, join
           <p style={{ fontSize: 13.5, opacity: 0.75, lineHeight: 1.6, margin: "0 0 22px" }}>
             {t("20 questions. 12 seconds each. Fastest correct answer wins the round — invite a friend and settle it live.", "20 ta savol. Har biriga 12 soniya. Eng tez to'g'ri javob g'olib — do'stingizni chaqiring va jonli bellashing.")}
           </p>
-          <button onClick={createRoom} disabled={busy || !myId} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(109,79,224,0.35)", opacity: busy ? 0.8 : 1 })}>
+          <button onClick={createRoom} disabled={busy || !myId} style={btn({ width: "100%", padding: "15px", borderRadius: 13, background: GRAD, color: "#fff", fontSize: 15, boxShadow: "0 10px 26px rgba(109,79,224,0.35)", opacity: busy || !myId ? 0.7 : 1 })}>
             {busy ? t("Creating…", "Yaratilmoqda…") : t("Create a room →", "Xona yaratish →")}
           </button>
+          {!myId && <p style={{ fontSize: 12, color: "#FFD9A0", margin: "10px 0 0" }}>{t("Sign in to play live matches.", "Jonli o'yin uchun tizimga kiring.")}</p>}
           <p style={{ fontSize: 12, opacity: 0.55, margin: "14px 0 0" }}>
             {t("Got a link from a friend? Just open it — you'll join automatically.", "Do'stingizdan havola oldingizmi? Uni oching — avtomatik qo'shilasiz.")}
           </p>
