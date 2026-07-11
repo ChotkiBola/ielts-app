@@ -786,6 +786,7 @@ export default function Home() {
             session={session}
             displayName={(profile && profile.full_name) || (session && session.user && session.user.email ? session.user.email.split("@")[0] : t("Player", "O'yinchi"))}
             myLevel={(profile && profile.level) || "Not sure"}
+            myFriendCode={profile && profile.friend_code}
             joinRoomId={vcJoinRoom}
             initialView={vcInitialView}
             onExit={() => { setVcOpen(false); setVcJoinRoom(null); setVcInitialView("entry"); }}

@@ -123,7 +123,7 @@ function TimerRing({ fraction }) {
   );
 }
 
-export default function VocabChallenge({ lang = "en", session, displayName, myLevel, joinRoomId, initialView, onExit }) {
+export default function VocabChallenge({ lang = "en", session, displayName, myLevel, myFriendCode, joinRoomId, initialView, onExit }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
   const myId = session && session.user ? session.user.id : null;
   const level = myLevel || "Not sure";
@@ -426,7 +426,7 @@ export default function VocabChallenge({ lang = "en", session, displayName, myLe
     if (view === "friends") {
       return (
         <VocabFriends
-          lang={lang} myId={myId} displayName={displayName}
+          lang={lang} myId={myId} displayName={displayName} myFriendCode={myFriendCode}
           onBack={() => setView("entry")}
           onChallengeCreated={(r) => { setRoom(r); setView("entry"); }}
         />

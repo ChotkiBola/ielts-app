@@ -14,12 +14,6 @@ const GRAD = "linear-gradient(120deg,var(--accent),var(--accent2))";
 const serif = "'DM Serif Display', serif";
 const btn = (extra = {}) => ({ cursor: "pointer", border: "none", fontWeight: 700, fontFamily: "inherit", transition: "all .18s ease", ...extra });
 
-// keep the start and last 2 characters visible, mask the middle
-function maskPhoneSimple(phone) {
-  if (!phone) return "";
-  return phone.length <= 7 ? phone : phone.slice(0, phone.length - 4) + "**" + phone.slice(-2);
-}
-
 function Avatar({ name, size = 40 }) {
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: V.surface2, border: `1px solid ${V.border}`, color: V.text, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: serif, fontSize: size * 0.42, flexShrink: 0 }}>
@@ -28,7 +22,7 @@ function Avatar({ name, size = 40 }) {
   );
 }
 
-export default function VocabFriends({ lang = "en", myId, displayName, onBack, onChallengeCreated }) {
+export default function VocabFriends({ lang = "en", myId, displayName, myFriendCode, onBack, onChallengeCreated }) {
   const t = (en, uz) => (lang === "uz" ? uz : en);
 
   const [query, setQuery] = useState("");
@@ -37,6 +31,7 @@ export default function VocabFriends({ lang = "en", myId, displayName, onBack, o
   const [friendships, setFriendships] = useState([]); // all rows involving me
   const [busyId, setBusyId] = useState(null);
   const [errMsg, setErrMsg] = useState("");
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!myId) return;
@@ -67,12 +62,25 @@ export default function VocabFriends({ lang = "en", myId, displayName, onBack, o
 
   async function search() {
     const q = query.trim();
-    if (!q) { setResults(null); return; }
+    if (q.length < 3) { setResults(null); return; }
     setSearching(true); setErrMsg("");
-    const { data, error } = await supabase.rpc("search_users_for_friend", { q });
+    // search_friend_candidates returns ONLY user_id/full_name/friend_code — no phone, no email, nothing else
+    const { data, error } = await supabase.rpc("search_friend_candidates", { q });
     if (error) { setErrMsg(t("Search failed. Please try again.", "Qidiruv xato berdi. Qaytadan urining.")); setResults([]); }
     else setResults(data || []);
     setSearching(false);
+  }
+
+  // debounced search-as-you-type, mirroring the 3-char minimum the DB function itself enforces
+  useEffect(() => {
+    if (query.trim().length < 3) { setResults(null); return; }
+    const id = setTimeout(() => { search(); }, 300);
+    return () => clearTimeout(id);
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function copyCode() {
+    if (!myFriendCode) return;
+    try { navigator.clipboard.writeText(`IELTS-${myFriendCode}`); setCodeCopied(true); setTimeout(() => setCodeCopied(false), 1600); } catch (e) {}
   }
 
   async function sendRequest(target) {
@@ -119,14 +127,30 @@ export default function VocabFriends({ lang = "en", myId, displayName, onBack, o
 
       <h2 style={{ fontFamily: serif, fontSize: 22, color: V.text, margin: "14px 0 16px", textAlign: "center" }}>👥 {t("Friends", "Do'stlar")}</h2>
 
+      {/* your own friend code */}
+      {myFriendCode && (
+        <div style={{ background: V.promptBg || "var(--prompt-bg)", color: V.promptText || "var(--prompt-text)", borderRadius: 16, padding: "14px 16px", marginBottom: 16, boxShadow: "0 6px 22px rgba(36,30,51,0.08)" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", opacity: 0.7, marginBottom: 6 }}>{t("Your friend code", "Sizning do'st kodingiz")}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: serif, fontSize: 20, letterSpacing: 1 }}>IELTS-{myFriendCode}</span>
+            <button onClick={copyCode} style={btn({ padding: "7px 12px", borderRadius: 9, background: "rgba(255,255,255,0.14)", color: "inherit", fontSize: 12 })}>{codeCopied ? "✓ " + t("Copied", "Nusxalandi") : t("Copy", "Nusxalash")}</button>
+            <a href={`https://t.me/share/url?url=&text=${encodeURIComponent(t(`Add me on IELTS Coach! My friend code: IELTS-${myFriendCode}`, `IELTS Coach'da meni qo'shing! Do'st kodim: IELTS-${myFriendCode}`))}`} target="_blank" rel="noreferrer"
+              style={{ ...btn({ padding: "7px 12px", borderRadius: 9, background: "#2AABEE", color: "#fff", fontSize: 12 }), textDecoration: "none" }}>✈ {t("Share", "Ulashish")}</a>
+          </div>
+        </div>
+      )}
+
       {/* search / add */}
       <div style={{ background: V.surface, border: `1px solid ${V.border}`, borderRadius: 18, padding: 16, marginBottom: 16, boxShadow: "0 6px 22px rgba(36,30,51,0.05)" }}>
         <div style={{ display: "flex", gap: 8 }}>
           <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") search(); }}
-            placeholder={t("Search by name or phone…", "Ism yoki telefon bo'yicha qidiring…")}
+            placeholder={t("Search by name or enter a friend code", "Ism bo'yicha qidiring yoki do'st kodini kiriting")}
             style={{ flex: 1, padding: "11px 13px", border: `1px solid ${V.border}`, borderRadius: 10, fontSize: 14, outline: "none", color: V.text, background: V.surface }} />
-          <button onClick={search} disabled={searching} style={btn({ background: GRAD, color: "#fff", padding: "11px 17px", borderRadius: 10, fontSize: 13.5 })}>{searching ? "…" : t("Search", "Qidir")}</button>
+          <button onClick={search} disabled={searching || query.trim().length < 3} style={btn({ background: GRAD, color: "#fff", padding: "11px 17px", borderRadius: 10, fontSize: 13.5, opacity: query.trim().length < 3 ? 0.6 : 1 })}>{searching ? "…" : t("Search", "Qidir")}</button>
         </div>
+        {query.trim().length > 0 && query.trim().length < 3 && (
+          <p style={{ fontSize: 11.5, color: V.faint, margin: "8px 0 0" }}>{t("Type at least 3 characters.", "Kamida 3 ta belgi kiriting.")}</p>
+        )}
         {results !== null && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {results.length === 0 && <p style={{ fontSize: 12.5, color: V.faint, margin: "4px 0" }}>{t("No matching users.", "Mos foydalanuvchi topilmadi.")}</p>}
@@ -135,10 +159,7 @@ export default function VocabFriends({ lang = "en", myId, displayName, onBack, o
               return (
                 <div key={u.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderTop: `1px solid ${V.border2}` }}>
                   <Avatar name={u.full_name} size={34} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, color: V.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.full_name || t("(no name)", "(ismsiz)")}</div>
-                    {u.phone && <div style={{ fontSize: 11.5, color: V.faint }}>{maskPhoneSimple(u.phone)}</div>}
-                  </div>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: V.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.full_name || t("(no name)", "(ismsiz)")}</div>
                   {st === "friends" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--good)" }}>✓ {t("Friends", "Do'st")}</span>}
                   {st === "sent" && <span style={{ fontSize: 11.5, fontWeight: 700, color: V.faint }}>{t("Requested", "So'rov yuborilgan")}</span>}
                   {st === "incoming" && <span style={{ fontSize: 11.5, fontWeight: 700, color: V.accent }}>{t("Respond below", "Pastda javob bering")}</span>}
